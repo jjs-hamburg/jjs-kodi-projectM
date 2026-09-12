@@ -17,6 +17,7 @@ jobs:
       ANDROID_API: 21
       PREFIX: ${{ github.workspace }}/xbmc-depends
       TARBALLS: ${{ github.workspace }}/xbmc-tarballs
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
 
     steps:
       - name: Checkout build repository
@@ -81,9 +82,6 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y             autoconf automake bison build-essential curl default-jdk flex gawk git gperf             lib32stdc++6 lib32z1 lib32z1-dev libcurl4-openssl-dev libtool pkg-config             python3 unzip zip zlib1g-dev
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
 
       - name: Install Android NDK r21e
         shell: bash
