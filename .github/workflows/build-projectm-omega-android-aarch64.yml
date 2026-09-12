@@ -65,6 +65,22 @@ jobs:
           test -f projectM-3.1.12/src/libprojectM/projectM.cpp
           test -f projectM-3.1.12/src/libprojectM/projectM.hpp
 
+      - name: Capture Kodi revision
+        id: kodi-revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "sha=$(git -C kodi rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore Kodi source tarball cache
+        id: tarball-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.TARBALLS }}
+          key: kodi-tarballs-${{ runner.os }}-${{ runner.arch }}-${{ steps.kodi-revision.outputs.sha }}
+          restore-keys: |
+            kodi-tarballs-${{ runner.os }}-${{ runner.arch }}-
+
       - name: Apply async-transition source changes
         run: |
           python3 patch/apply_changes.py             --addon "$GITHUB_WORKSPACE/visualization.projectm"             --projectm "$GITHUB_WORKSPACE/projectM-3.1.12"
@@ -97,7 +113,64 @@ jobs:
           test -d "/usr/local/lib/android/sdk/ndk/${NDK_VERSION}"
           echo "ANDROID_NDK_HOME=/usr/local/lib/android/sdk/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
 
+      - name: Restore completed Kodi Android dependency environment
+        id: depends-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ env.PREFIX }}
+            ${{ github.workspace }}/kodi/tools/depends/Makefile.include
+          key: kodi-depends-${{ runner.os }}-${{ runner.arch }}-${{ steps.kodi-revision.outputs.sha }}-aarch64-api${{ env.ANDROID_API }}-ndk${{ env.NDK_VERSION }}
+
+      - name: Preseed verified fontconfig 2.14.0 archive
+        if: steps.depends-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$TARBALLS"
+
+          archive="fontconfig-2.14.0.tar.xz"
+          version_file="$GITHUB_WORKSPACE/kodi/tools/depends/target/fontconfig/FONTCONFIG-VERSION"
+          expected="$(sed -n 's/^SHA512=//p' "$version_file")"
+          test -n "$expected"
+
+          verify_archive() {
+            [ -f "$1" ] || return 1
+            actual="$(sha512sum "$1" | awk '{print $1}')"
+            [ "$actual" = "$expected" ]
+          }
+
+          if verify_archive "$TARBALLS/$archive"; then
+            echo "Using verified cached $archive"
+            exit 0
+          fi
+
+          rm -f "$TARBALLS/$archive" "$TARBALLS/$archive.tmp"
+
+          urls=(
+            "https://gstreamer.freedesktop.org/data/src/mirror/$archive"
+            "https://mirrors.mit.edu/macports/distfiles/fontconfig/$archive"
+          )
+
+          for url in "${urls[@]}"; do
+            echo "Downloading $archive from $url"
+            if curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$TARBALLS/$archive.tmp" "$url"; then
+              if verify_archive "$TARBALLS/$archive.tmp"; then
+                mv "$TARBALLS/$archive.tmp" "$TARBALLS/$archive"
+                echo "Verified $archive against Kodi Omega SHA512: $expected"
+                exit 0
+              fi
+              echo "Downloaded archive from $url failed Kodi SHA512 verification" >&2
+            fi
+            rm -f "$TARBALLS/$archive.tmp"
+          done
+
+          echo "Unable to obtain a fontconfig archive matching Kodi Omega SHA512" >&2
+          exit 1
+
       - name: Configure Kodi Android AArch64 depends
+        if: steps.depends-cache.outputs.cache-hit != 'true'
         working-directory: kodi/tools/depends
         shell: bash
         run: |
@@ -106,8 +179,25 @@ jobs:
           ./configure             --host=aarch64-linux-android             --with-sdk-path="$ANDROID_SDK_ROOT"             --with-ndk-path="$ANDROID_NDK_HOME"             --with-ndk-api="$ANDROID_API"             --with-tarballs="$TARBALLS"             --prefix="$PREFIX"             --enable-debug=no
 
       - name: Build Kodi Android dependency environment
+        if: steps.depends-cache.outputs.cache-hit != 'true'
         working-directory: kodi/tools/depends
         run: make -j"$(getconf _NPROCESSORS_ONLN)"
+
+      - name: Save Kodi source tarball cache
+        if: steps.tarball-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.TARBALLS }}
+          key: kodi-tarballs-${{ runner.os }}-${{ runner.arch }}-${{ steps.kodi-revision.outputs.sha }}
+
+      - name: Save completed Kodi Android dependency environment
+        if: steps.depends-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ env.PREFIX }}
+            ${{ github.workspace }}/kodi/tools/depends/Makefile.include
+          key: kodi-depends-${{ runner.os }}-${{ runner.arch }}-${{ steps.kodi-revision.outputs.sha }}-aarch64-api${{ env.ANDROID_API }}-ndk${{ env.NDK_VERSION }}
 
       - name: Build visualization.projectm only
         working-directory: kodi
