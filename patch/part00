@@ -15,28 +15,62 @@ def replace_exact(path: Path, old: str, new: str, label: str) -> None:
 
 def patch_addon(addon: Path) -> None:
     main = addon / "src" / "Main.cpp"
-    old = '''void CVisualizationProjectM::AudioData(const float* pAudioData, size_t iAudioDataLength)\n{\n  std::unique_lock<std::mutex> lock(m_pmMutex);\n  if (m_projectM)\n    m_projectM->pcm()->addPCMfloat_2ch(pAudioData, iAudioDataLength);\n}\n'''
-    new = '''void CVisualizationProjectM::AudioData(const float* pAudioData, size_t iAudioDataLength)\n{\n  // Kodi's audio callback must never wait for a long render/preset switch.\n  // If projectM is busy, skip only this visualizer input block.\n  std::unique_lock<std::mutex> lock(m_pmMutex, std::try_to_lock);\n  if (!lock.owns_lock())\n    return;\n\n  if (m_projectM)\n    m_projectM->pcm()->addPCMfloat_2ch(pAudioData, iAudioDataLength);\n}\n'''
+    old = """void CVisualizationProjectM::AudioData(const float* pAudioData, size_t iAudioDataLength)
+{
+  std::unique_lock<std::mutex> lock(m_pmMutex);
+  if (m_projectM)
+    m_projectM->pcm()->addPCMfloat_2ch(pAudioData, iAudioDataLength);
+}
+"""
+    new = """void CVisualizationProjectM::AudioData(const float* pAudioData, size_t iAudioDataLength)
+{
+  // Kodi's audio callback must never wait for projectM rendering or preset setup.
+  // If projectM is busy, skip only this visualizer PCM block.
+  std::unique_lock<std::mutex> lock(m_pmMutex, std::try_to_lock);
+  if (!lock.owns_lock())
+    return;
+
+  if (m_projectM)
+    m_projectM->pcm()->addPCMfloat_2ch(pAudioData, iAudioDataLength);
+}
+"""
     replace_exact(main, old, new, "non-blocking AudioData")
 
     addon_xml = addon / "visualization.projectm" / "addon.xml.in"
-    replace_exact(addon_xml, '  version="21.0.3"\n', '  version="21.0.3.1"\n', "local addon version")
+    replace_exact(addon_xml, '  version="21.0.3"\n', '  version="21.0.3.2"\n', "local addon version")
 
 
-def patch_projectm(projectm: Path) -> None:
-    hpp = projectm / "src" / "libprojectM" / "projectM.hpp"
-    replace_exact(
-        hpp,
-        '#include "fatal.h"\n#include <vector>\n',
-        '#include "fatal.h"\n#include <vector>\n#include <atomic>\n#include <mutex>\n',
-        "projectM async includes",
+def verify_projectm(projectm: Path) -> None:
+    # Stability build: projectM 3.1.12 itself intentionally remains unmodified.
+    required = [
+        projectm / "src" / "libprojectM" / "projectM.cpp",
+        projectm / "src" / "libprojectM" / "projectM.hpp",
+        projectm / "src" / "libprojectM" / "Renderer" / "Renderer.cpp",
+    ]
+    for path in required:
+        if not path.is_file():
+            raise RuntimeError(f"missing expected projectM 3.1.12 source file: {path}")
+    print("OK  projectM 3.1.12 left unmodified for stability")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description="Apply the Omega/projectM 3.1.12 audio-isolation stability change"
     )
+    parser.add_argument("--addon", required=True, type=Path, help="visualization.projectm Omega checkout root")
+    parser.add_argument("--projectm", required=True, type=Path, help="projectM 3.1.12 source root")
+    args = parser.parse_args()
 
-    old_tail = '''  Pipeline* currentPipe;\n\n  std::unique_ptr<Preset> switchToCurrentPreset();\n  bool startPresetTransition(bool hard_cut);\n\n\n\n};\n'''
-    new_tail = '''  Pipeline* currentPipe;\n\n#ifdef USE_THREADS\n  enum class BackgroundTask\n  {\n    None = 0,\n    EvaluateSecondPreset,\n    LoadPreset\n  };\n\n  std::atomic<BackgroundTask> m_backgroundTask{BackgroundTask::None};\n  std::atomic<bool> m_secondPresetResultReady{false};\n  bool m_scheduleSecondPresetEvaluation{false};\n\n  std::mutex m_asyncPresetMutex;\n  unsigned long long m_presetRequestGeneration{0};\n  unsigned long long m_loadingPresetGeneration{0};\n  std::size_t m_requestedPresetIndex{0};\n  std::size_t m_loadingPresetIndex{0};\n  std::size_t m_preparedPresetIndex{0};\n  bool m_requestedPresetHardCut{false};\n  bool m_loadingPresetHardCut{false};\n  bool m_preparedPresetHardCut{false};\n  bool m_presetLoadRequested{false};\n  bool m_preparedPresetReady{false};\n  bool m_preparedPresetFailed{false};\n  std::unique_ptr<Preset> m_preparedPreset;\n  std::string m_preparedPresetError;\n  int m_asyncSwitchRetries{0};\n\n  bool hasPendingPresetTransition();\n  void schedulePendingPresetLoad();\n  void processPendingPresetTransition();\n  void scheduleSecondPresetEvaluation();\n#endif\n\n  std::unique_ptr<Preset> switchToCurrentPreset();\n  bool startPresetTransition(bool hard_cut);\n\n};\n'''
-    replace_exact(hpp, old_tail, new_tail, "projectM async state")
+    try:
+        patch_addon(args.addon.resolve())
+        verify_projectm(args.projectm.resolve())
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
 
-    cpp = projectm / "src" / "libprojectM" / "projectM.cpp"
+    print("Audio-isolation stability transformation applied successfully.")
+    return 0
 
-    old_thread = '''void *projectM::thread_func(void *vptr_args)\n{\n    //  printf("in thread: %f\\n", timeKeeper->PresetProgressB());\n    while (true)\n    {\n        if (!worker_sync.wait_for_work())\n            return NULL;\n        evaluateSecondPreset();\n        worker_sync.finished_work();\n    }\n}\n'''
-    new_thread = '''void *projectM::thread_func(void *vptr_args)\n{\n    while (true)\n    {\n        if (!worker_sync.wait_for_work())\n            return NULL;\n\n        const BackgroundTask task = m_backgroundTask.load(std::memory_order_acquire);\n        if (task == BackgroundTask::EvaluateSecondPreset)\n        {\n            evaluateSecondPreset();\n            m_secondPresetResultReady.store(true, std::memory_order_release);\n        }\n        else if (task == BackgroundTask::LoadPreset)\n        {\n            std::size_t presetIndex = 0;\n            unsigned long long generation = 0;\n            bool hardCut = false;\n            {\n                std::lock_guard<std::mutex> lock(m_asyncPresetMutex);\n                presetIndex = m_loadingPresetIndex;\n                generation = m_loadingPresetGeneration;\n                hardCut = m_loadingPresetHardCut;\n            }\n\n            std::unique_ptr<Preset> loadedPreset;\n            std::string error;\n            try\n            {\n                loadedPreset = m_presetLoader->loadPreset(presetIndex);\n            }\n            catch (const PresetFactoryException& e)\n            {\n                error = e.message();\n            }\n            catch (const std::exception& e)\n            {\n                error = e.what();\n            }\n            catch (...)\n            {\n                er
+
+if __name__ == "__main__":
+    raise SystemExit(main())
