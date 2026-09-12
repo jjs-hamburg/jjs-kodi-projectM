@@ -27,7 +27,7 @@ jobs:
         run: |
           set -euo pipefail
           cat patch/part00 patch/part01 patch/part02 patch/part03 patch/part04 > patch/apply_changes.py
-          echo "2e692009c17d3a8cb85002931f430afbee37ba6a3bcb54fe8158ed20dfd73555  patch/apply_changes.py" | sha256sum -c -
+          echo "7969d12b77b5552feac32b29d4bf7ff3b1088786c9753c5f354c5311b0ed8013  patch/apply_changes.py" | sha256sum -c -
           python3 -m py_compile patch/apply_changes.py
 
       - name: Checkout Kodi Omega
