@@ -1,0 +1,97 @@
+:size_t preparedIndex = 0;
+    bool preparedHardCut = false;
+    bool failed = false;
+    std::string failureMessage;
+    bool shouldScheduleLoad = false;
+
+    {
+        std::lock_guard<std::mutex> lock(m_asyncPresetMutex);
+        if (m_preparedPresetReady)
+        {
+            preparedPreset = std::move(m_preparedPreset);
+            preparedIndex = m_preparedPresetIndex;
+            preparedHardCut = m_preparedPresetHardCut;
+            m_preparedPresetReady = false;
+        }
+        else if (m_preparedPresetFailed)
+        {
+            preparedIndex = m_preparedPresetIndex;
+            preparedHardCut = m_preparedPresetHardCut;
+            failureMessage = m_preparedPresetError;
+            m_preparedPresetFailed = false;
+            failed = true;
+        }
+        else if (m_presetLoadRequested && !timeKeeper->IsSmoothing())
+        {
+            shouldScheduleLoad = true;
+        }
+    }
+
+    if (preparedPreset)
+    {
+        *m_presetPos = m_presetChooser->begin(static_cast<unsigned int>(preparedIndex));
+        renderer->setPresetName(preparedPreset->name());
+        std::string result = renderer->SetPipeline(preparedPreset->pipeline());
+        if (!result.empty())
+            std::cerr << "problem setting pipeline: " << result << std::endl;
+
+        if (preparedHardCut)
+        {
+            m_activePreset = std::move(preparedPreset);
+            timeKeeper->StartPreset();
+        }
+        else
+        {
+            m_activePreset2 = std::move(preparedPreset);
+            timeKeeper->StartPreset();
+            timeKeeper->StartSmoothing();
+        }
+
+        presetSwitchedEvent(preparedHardCut, preparedIndex);
+        errorLoadingCurrentPreset = false;
+        m_asyncSwitchRetries = 0;
+        populatePresetMenu();
+        return;
+    }
+
+    if (failed)
+    {
+        if (failureMessage.empty())
+            failureMessage = "Could not load preset";
+        presetSwitchFailedEvent(preparedHardCut, static_cast<unsigned int>(preparedIndex), failureMessage);
+        errorLoadingCurrentPreset = true;
+        populatePresetMenu();
+
+        if (++m_asyncSwitchRetries < kMaxSwitchRetries && !m_presetChooser->empty())
+            selectRandom(preparedHardCut);
+        return;
+    }
+
+    if (shouldScheduleLoad)
+        schedulePendingPresetLoad();
+}
+#endif
+
+'''
+    replace_exact(cpp, marker, helpers + marker, "async helper functions")
+
+    old_start = '''bool projectM::startPresetTransition(bool hard_cut) {\n  std::unique_ptr<Preset> new_preset = switchToCurrentPreset();\n  if (new_preset == nullptr) {\n    presetSwitchFailedEvent(hard_cut, **m_presetPos, "fake error");\n    errorLoadingCurrentPreset = true;\n    populatePresetMenu();\n    return false;\n  }\n  if (hard_cut) {\n    m_activePreset = std::move(new_preset);\n    timeKeeper->StartPreset();\n  } else {\n    m_activePreset2 = std::move(new_preset);\n    timeKeeper->StartPreset();\n    timeKeeper->StartSmoothing();\n  }\n\n  presetSwitchedEvent(hard_cut, **m_presetPos);\n  errorLoadingCurrentPreset = false;\n\n  populatePresetMenu();\n\n  return true;\n}\n'''
+    new_start = '''bool projectM::startPresetTransition(bool hard_cut) {\n#ifdef USE_THREADS\n  {\n    std::lock_guard<std::mutex> lock(m_asyncPresetMutex);\n    ++m_presetRequestGeneration;\n    m_requestedPresetIndex = **m_presetPos;\n    m_requestedPresetHardCut = hard_cut;\n    m_presetLoadRequested = true;\n\n    // A newer request supersedes a prepared-but-not-yet-activated preset.\n    m_preparedPreset.reset();\n    m_preparedPresetReady = false;\n    m_preparedPresetFailed = false;\n    m_preparedPresetError.clear();\n  }\n  return true;\n#else\n  std::unique_ptr<Preset> new_preset = switchToCurrentPreset();\n  if (new_preset == nullptr) {\n    presetSwitchFailedEvent(hard_cut, **m_presetPos, "fake error");\n    errorLoadingCurrentPreset = true;\n    populatePresetMenu();\n    return false;\n  }\n  if (hard_cut) {\n    m_activePreset = std::move(new_preset);\n    timeKeeper->StartPreset();\n  } else {\n    m_activePreset2 = std::move(new_preset);\n    timeKeeper->StartPreset();\n    timeKeeper->StartSmoothing();\n  }\n\n  presetSwitchedEvent(hard_cut, **m_presetPos);\n  errorLoadingCurrentPreset = false;\n\n  populatePresetMenu();\n\n  return true;\n#endif\n}\n'''
+    replace_exact(cpp, old_start, new_start, "asynchronous startPresetTransition")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Apply the Omega/projectM 3.1.12 asynchronous transition changes")
+    parser.add_argument("--addon", required=True, type=Path, help="visualization.projectm Omega checkout root")
+    parser.add_argument("--projectm", required=True, type=Path, help="projectM 3.1.12 source root")
+    args = parser.parse_args()
+
+    try:
+        patch_addon(args.addon.resolve())
+        patch_projectm(args.projectm.resolve())
+    except Exception as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+
+    print("All source transformations applied successfully.")
+    return 
