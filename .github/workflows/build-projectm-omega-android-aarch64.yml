@@ -1,0 +1,201 @@
+name: Build projectM Omega Android AArch64
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - jjs-async-transition
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 330
+    env:
+      KODI_BRANCH: Omega
+      ADDON_BRANCH: Omega
+      NDK_VERSION: 21.4.7075529
+      ANDROID_API: 21
+      PREFIX: ${{ github.workspace }}/xbmc-depends
+      TARBALLS: ${{ github.workspace }}/xbmc-tarballs
+
+    steps:
+      - name: Checkout build repository
+        uses: actions/checkout@v4
+
+      - name: Reassemble and verify source transformer
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat patch/part00 patch/part01 patch/part02 patch/part03 patch/part04 > patch/apply_changes.py
+          echo "a4a042d8d92f5e771ace0829c9a39f8227983e1c1bb0debf473e5f590d2825ba  patch/apply_changes.py" | sha256sum -c -
+          python3 -m py_compile patch/apply_changes.py
+
+      - name: Checkout Kodi Omega
+        uses: actions/checkout@v4
+        with:
+          repository: xbmc/xbmc
+          ref: ${{ env.KODI_BRANCH }}
+          path: kodi
+          fetch-depth: 1
+
+      - name: Checkout visualization.projectm Omega
+        uses: actions/checkout@v4
+        with:
+          repository: xbmc/visualization.projectm
+          ref: ${{ env.ADDON_BRANCH }}
+          path: visualization.projectm
+          fetch-depth: 1
+
+      - name: Checkout projectM 3.1.12
+        uses: actions/checkout@v4
+        with:
+          repository: projectM-visualizer/projectm
+          ref: v3.1.12
+          path: projectM-3.1.12
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Verify exact upstream versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F 'version="21.0.3"' visualization.projectm/visualization.projectm/addon.xml.in
+          grep -F 'projectM-3.1.12.tar.gz' visualization.projectm/depends/common/projectm/projectm.txt
+          test -f projectM-3.1.12/src/libprojectM/projectM.cpp
+          test -f projectM-3.1.12/src/libprojectM/projectM.hpp
+
+      - name: Apply async-transition source changes
+        run: |
+          python3 patch/apply_changes.py             --addon "$GITHUB_WORKSPACE/visualization.projectm"             --projectm "$GITHUB_WORKSPACE/projectM-3.1.12"
+
+      - name: Create local patched projectM dependency archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/localdist"
+          tar -C "$GITHUB_WORKSPACE" -czf "$GITHUB_WORKSPACE/localdist/projectM-3.1.12.tar.gz" projectM-3.1.12
+          printf 'projectm file://%s/localdist/projectM-3.1.12.tar.gz\n' "$GITHUB_WORKSPACE"             > visualization.projectm/depends/common/projectm/projectm.txt
+          cat visualization.projectm/depends/common/projectm/projectm.txt
+
+      - name: Install host build requirements
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             autoconf automake bison build-essential curl default-jdk flex gawk git gperf             lib32stdc++6 lib32z1 lib32z1-dev libcurl4-openssl-dev libtool pkg-config             python3 unzip zip zlib1g-dev
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android NDK r21e
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager             "platform-tools"             "platforms;android-30"             "build-tools;30.0.3"             "ndk;${NDK_VERSION}"
+          echo "ANDROID_NDK_HOME=${ANDROID_SDK_ROOT}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Configure Kodi Android AArch64 depends
+        working-directory: kodi/tools/depends
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./bootstrap
+          ./configure             --host=aarch64-linux-android             --with-sdk-path="$ANDROID_SDK_ROOT"             --with-ndk-path="$ANDROID_NDK_HOME"             --with-ndk-api="$ANDROID_API"             --with-tarballs="$TARBALLS"             --prefix="$PREFIX"             --enable-debug=no
+
+      - name: Build Kodi Android dependency environment
+        working-directory: kodi/tools/depends
+        run: make -j2
+
+      - name: Build visualization.projectm only
+        working-directory: kodi
+        shell: bash
+        run: |
+          set -euo pipefail
+          make -j2 -C tools/depends/target/binary-addons             ADDONS="visualization.projectm"             ADDON_SRC_PREFIX="$GITHUB_WORKSPACE"
+
+      - name: Locate built addon binary
+        id: built
+        shell: bash
+        run: |
+          set -euo pipefail
+          mapfile -t libs < <(find "$PREFIX" "$GITHUB_WORKSPACE/kodi" "$GITHUB_WORKSPACE/visualization.projectm"             -type f \( -name 'libvisualization.projectm.so' -o -name 'visualization.projectm.so' \) 2>/dev/null | sort -u)
+          printf 'Found binary candidates:\n'
+          printf '%s\n' "${libs[@]}"
+          test "${#libs[@]}" -gt 0
+          chosen="${libs[0]}"
+          for f in "${libs[@]}"; do
+            case "$f" in
+              "$PREFIX"/*) chosen="$f"; break ;;
+            esac
+          done
+          echo "lib=$chosen" >> "$GITHUB_OUTPUT"
+          file "$chosen"
+          readelf -h "$chosen" | grep -E 'Class:|Machine:'
+          readelf -d "$chosen" | grep NEEDED || true
+
+      - name: Package installable addon
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf out package-root
+          mkdir -p out package-root/visualization.projectm
+
+          addon_dir=""
+          while IFS= read -r candidate; do
+            d="$(dirname "$candidate")"
+            if [ -d "$d/resources" ]; then
+              addon_dir="$d"
+              break
+            fi
+          done < <(find "$PREFIX" "$GITHUB_WORKSPACE/kodi" -type f -path '*/visualization.projectm/addon.xml' 2>/dev/null)
+
+          if [ -n "$addon_dir" ]; then
+            cp -a "$addon_dir"/. package-root/visualization.projectm/
+          else
+            # Fallback: use upstream resource tree and create addon.xml from the generated build tree if available.
+            cp -a visualization.projectm/visualization.projectm/resources package-root/visualization.projectm/
+            generated_xml="$(find "$GITHUB_WORKSPACE" -type f -path '*/visualization.projectm/addon.xml' 2>/dev/null | head -n1 || true)"
+            if [ -z "$generated_xml" ]; then
+              echo "No generated addon.xml found" >&2
+              exit 1
+            fi
+            cp "$generated_xml" package-root/visualization.projectm/addon.xml
+          fi
+
+          cp "${{ steps.built.outputs.lib }}" package-root/visualization.projectm/libvisualization.projectm.so
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("package-root/visualization.projectm/addon.xml")
+          s = p.read_text(encoding="utf-8-sig")
+          if 'version="21.0.3.1"' not in s:
+              s = s.replace('version="21.0.3"', 'version="21.0.3.1"', 1)
+          if 'version="21.0.3.1"' not in s:
+              raise SystemExit("Expected addon version not found")
+          p.write_text(s, encoding="utf-8")
+          PY
+
+          (cd package-root && zip -qr ../out/visualization.projectm-21.0.3.1-omega-android-aarch64.zip visualization.projectm)
+          sha256sum out/visualization.projectm-21.0.3.1-omega-android-aarch64.zip | tee out/SHA256SUMS.txt
+
+      - name: Validate packaged addon
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf validate
+          mkdir validate
+          unzip -q out/visualization.projectm-21.0.3.1-omega-android-aarch64.zip -d validate
+          test -f validate/visualization.projectm/addon.xml
+          test -f validate/visualization.projectm/libvisualization.projectm.so
+          grep -F 'version="21.0.3.1"' validate/visualization.projectm/addon.xml
+          grep -F '<platform>android-aarch64</platform>' validate/visualization.projectm/addon.xml
+          file validate/visualization.projectm/libvisualization.projectm.so
+          readelf -h validate/visualization.projectm/libvisualization.projectm.so | grep -E 'Class:|Machine:'
+          readelf -d validate/visualization.projectm/libvisualization.projectm.so | grep 'libGLESv2.so'
+
+      - name: Upload installable Kodi addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: visualization.projectm-21.0.3.1-omega-android-aarch64
+          path: |
+            out/visualization.projectm-21.0.3.1-omega-android-aarch64.zip
+            out/SHA256SUMS.txt
+          if-no-files-found: error
