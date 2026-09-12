@@ -75,8 +75,12 @@ jobs:
           set -euo pipefail
           mkdir -p "$GITHUB_WORKSPACE/localdist"
           tar -C "$GITHUB_WORKSPACE" -czf "$GITHUB_WORKSPACE/localdist/projectM-3.1.12.tar.gz" projectM-3.1.12
-          printf 'projectm file://%s/localdist/projectM-3.1.12.tar.gz\n' "$GITHUB_WORKSPACE"             > visualization.projectm/depends/common/projectm/projectm.txt
+          printf 'projectm file://%s/localdist/projectM-3.1.12.tar.gz\n' "$GITHUB_WORKSPACE" > visualization.projectm/depends/common/projectm/projectm.txt
+          sha256sum "$GITHUB_WORKSPACE/localdist/projectM-3.1.12.tar.gz" | awk '{print $1}' > visualization.projectm/depends/common/projectm/projectm.sha256
+          echo "projectm.txt:"
           cat visualization.projectm/depends/common/projectm/projectm.txt
+          echo "projectm.sha256:"
+          cat visualization.projectm/depends/common/projectm/projectm.sha256
 
       - name: Install host build requirements
         run: |
@@ -103,14 +107,14 @@ jobs:
 
       - name: Build Kodi Android dependency environment
         working-directory: kodi/tools/depends
-        run: make -j2
+        run: make -j"$(getconf _NPROCESSORS_ONLN)"
 
       - name: Build visualization.projectm only
         working-directory: kodi
         shell: bash
         run: |
           set -euo pipefail
-          make -j2 -C tools/depends/target/binary-addons             ADDONS="visualization.projectm"             ADDON_SRC_PREFIX="$GITHUB_WORKSPACE"
+          make -j"$(getconf _NPROCESSORS_ONLN)" -C tools/depends/target/binary-addons             ADDONS="visualization.projectm"             ADDON_SRC_PREFIX="$GITHUB_WORKSPACE"
 
       - name: Locate built addon binary
         id: built
