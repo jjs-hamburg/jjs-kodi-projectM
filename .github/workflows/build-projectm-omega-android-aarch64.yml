@@ -170,7 +170,9 @@ jobs:
           exit 1
 
       - name: Configure Kodi Android AArch64 depends
-        if: steps.depends-cache.outputs.cache-hit != 'true'
+        # Always rerun configure on the fresh Kodi checkout. The cache contains
+        # the built PREFIX, but configure regenerates source-tree files such as
+        # target/Toolchain_binaddons.cmake that binary-addons make depends on.
         working-directory: kodi/tools/depends
         shell: bash
         run: |
