@@ -26,8 +26,9 @@ jobs:
       KODI_REF: f8815ee40f49a700c047982d752be4b2a61420e2
       ADDON_REF: d91f39d9ee9f06f998fe83d58154d36331d2c666
       PROJECTM_REF: b3c3282eb00fae210e9499fa9d11bcfcccffbd96
-      ADDON_VERSION: 21.0.3.2
-      ADDON_ZIP: visualization.projectm-21.0.3.2-omega-android-aarch64.zip
+      ADDON_VERSION: 21.0.3.3
+      ADDON_ZIP: visualization.projectm-21.0.3.3-omega-android-aarch64.zip
+      SOURCE_ZIP: jjs-kodi-projectm-21.0.3.3-source.zip
       NDK_VERSION: 21.4.7075529
       ANDROID_API: 21
       PREFIX: ${{ github.workspace }}/xbmc-depends
@@ -277,14 +278,18 @@ jobs:
           fi
 
           cp "${{ steps.built.outputs.lib }}" package-root/visualization.projectm/libvisualization.projectm.so
+          cp LICENSE.md package-root/visualization.projectm/LICENSE.md
+          cp LICENSE-projectM-LGPL-2.1.txt package-root/visualization.projectm/LICENSE-projectM-LGPL-2.1.txt
+          cp NOTICE.md package-root/visualization.projectm/NOTICE.md
+          cp SOURCE.md package-root/visualization.projectm/SOURCE.md
 
           python3 - <<'PY'
           from pathlib import Path
           p = Path("package-root/visualization.projectm/addon.xml")
           s = p.read_text(encoding="utf-8-sig")
-          if 'version="21.0.3.2"' not in s:
-              s = s.replace('version="21.0.3"', 'version="21.0.3.2"', 1)
-          if 'version="21.0.3.2"' not in s:
+          if 'version="21.0.3.3"' not in s:
+              s = s.replace('version="21.0.3"', 'version="21.0.3.3"', 1)
+          if 'version="21.0.3.3"' not in s:
               raise SystemExit("Expected addon version not found")
           p.write_text(s, encoding="utf-8")
           PY
@@ -301,11 +306,60 @@ jobs:
           unzip -q "out/$ADDON_ZIP" -d validate
           test -f validate/visualization.projectm/addon.xml
           test -f validate/visualization.projectm/libvisualization.projectm.so
-          grep -F 'version="21.0.3.2"' validate/visualization.projectm/addon.xml
+          grep -F 'version="21.0.3.3"' validate/visualization.projectm/addon.xml
+          grep -F 'name="JJS KODI projectM"' validate/visualization.projectm/addon.xml
+          grep -F 'provider-name="Team Kodi; JJS"' validate/visualization.projectm/addon.xml
+          grep -F '<source>https://github.com/jjs-hamburg/projectm-omega-build</source>' validate/visualization.projectm/addon.xml
           grep -F '<platform>android-aarch64</platform>' validate/visualization.projectm/addon.xml
+          test -s validate/visualization.projectm/LICENSE.md
+          test -s validate/visualization.projectm/LICENSE-projectM-LGPL-2.1.txt
+          test -s validate/visualization.projectm/NOTICE.md
+          test -s validate/visualization.projectm/SOURCE.md
           file validate/visualization.projectm/libvisualization.projectm.so
           readelf -h validate/visualization.projectm/libvisualization.projectm.so | grep -E 'Class:|Machine:'
           readelf -d validate/visualization.projectm/libvisualization.projectm.so | grep 'libGLESv2.so'
+
+      - name: Package corresponding source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf source-root
+          mkdir -p "source-root/jjs-kodi-projectm-${ADDON_VERSION}"
+
+          cp -a visualization.projectm "source-root/jjs-kodi-projectm-${ADDON_VERSION}/visualization.projectm"
+          cp -a projectM-3.1.12 "source-root/jjs-kodi-projectm-${ADDON_VERSION}/projectM-3.1.12"
+
+          find "source-root/jjs-kodi-projectm-${ADDON_VERSION}" -type d -name .git -prune -exec rm -rf {} +
+          find "source-root/jjs-kodi-projectm-${ADDON_VERSION}" -type f -name .git -delete
+
+          mkdir -p "source-root/jjs-kodi-projectm-${ADDON_VERSION}/build"
+          cp patch/apply_changes.py "source-root/jjs-kodi-projectm-${ADDON_VERSION}/build/apply_changes.py"
+          cp .github/workflows/build-projectm-omega-android-aarch64.yml \
+            "source-root/jjs-kodi-projectm-${ADDON_VERSION}/build/build-projectm-omega-android-aarch64.yml"
+          cp README.md NOTICE.md SOURCE.md LICENSE.md LICENSE-projectM-LGPL-2.1.txt \
+            "source-root/jjs-kodi-projectm-${ADDON_VERSION}/"
+
+          (cd source-root && zip -qr "../out/$SOURCE_ZIP" "jjs-kodi-projectm-${ADDON_VERSION}")
+          sha256sum "out/$SOURCE_ZIP" >> out/SHA256SUMS.txt
+
+      - name: Validate corresponding source package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf source-validate
+          mkdir source-validate
+          unzip -q "out/$SOURCE_ZIP" -d source-validate
+          root="source-validate/jjs-kodi-projectm-${ADDON_VERSION}"
+          test -s "$root/visualization.projectm/src/Main.cpp"
+          test -s "$root/visualization.projectm/visualization.projectm/addon.xml.in"
+          grep -F 'std::try_to_lock' "$root/visualization.projectm/src/Main.cpp"
+          grep -F 'name="JJS KODI projectM"' "$root/visualization.projectm/visualization.projectm/addon.xml.in"
+          test -s "$root/projectM-3.1.12/src/libprojectM/projectM.cpp"
+          test -s "$root/build/apply_changes.py"
+          test -s "$root/LICENSE.md"
+          test -s "$root/LICENSE-projectM-LGPL-2.1.txt"
+          test -s "$root/NOTICE.md"
+          test -s "$root/SOURCE.md"
 
       - name: Publish direct-install GitHub Release
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -315,13 +369,13 @@ jobs:
         run: |
           set -euo pipefail
           tag="v${ADDON_VERSION}-jjs"
-          title="projectM Omega Android AArch64 ${ADDON_VERSION}"
-          notes="JJS stability build for Kodi 21/Omega on Android AArch64. The Kodi audio callback uses a non-blocking projectM mutex acquisition so preset changes cannot stall audio. Built from pinned upstream revisions documented in README.md."
+          title="JJS KODI projectM ${ADDON_VERSION} — Omega Android AArch64"
+          notes="JJS KODI projectM stability build for Kodi 21/Omega on Android AArch64. Add-on ID remains visualization.projectm. The Kodi audio callback uses a non-blocking projectM mutex acquisition so preset changes cannot stall audio. Built from pinned upstream revisions documented in README.md."
 
           if gh release view "$tag" >/dev/null 2>&1; then
-            gh release upload "$tag" "out/$ADDON_ZIP" out/SHA256SUMS.txt --clobber
+            gh release upload "$tag" "out/$ADDON_ZIP" "out/$SOURCE_ZIP" out/SHA256SUMS.txt --clobber
           else
-            gh release create "$tag" "out/$ADDON_ZIP" out/SHA256SUMS.txt \
+            gh release create "$tag" "out/$ADDON_ZIP" "out/$SOURCE_ZIP" out/SHA256SUMS.txt \
               --title "$title" \
               --notes "$notes"
           fi
