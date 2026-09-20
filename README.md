@@ -1,20 +1,22 @@
-# projectM Omega Android AArch64 stability build
+# JJS KODI projectM
 
-Reproducible build repository for the JJS projectM stability variant used with Kodi 21/Omega on Android AArch64.
+Reproducible build repository for **JJS KODI projectM**, the JJS stability variant of Kodi's `visualization.projectm` for Kodi 21/Omega on Android AArch64.
 
 The canonical branch is `main`.
 
 ## Current known-good version
 
-- Add-on ID: `visualization.projectm`
-- Add-on version: `21.0.3.2`
+- Visible add-on name: **JJS KODI projectM**
+- Add-on ID: `visualization.projectm` (intentionally unchanged)
+- Add-on version: `21.0.3.3`
+- Provider: `Team Kodi; JJS`
 - Target: Kodi 21/Omega
 - Platform: Android AArch64
 - Android API: 21
 - Android NDK: r21e / `21.4.7075529`
 - projectM: 3.1.12
 
-The known-good ZIP produced by workflow run 34722353681 and tested on the NVIDIA Shield is:
+The binary reference known to be good and tested on the NVIDIA Shield remains the 21.0.3.2 build produced by workflow run 34722353681:
 
 `visualization.projectm-21.0.3.2-omega-android-aarch64.zip`
 
@@ -72,9 +74,11 @@ A successful build on `main` publishes the installable ZIP directly under GitHub
 
 There is deliberately no GitHub Actions artifact for normal distribution, because GitHub wraps Actions artifacts in another ZIP. The Release asset itself is the ZIP Kodi can install directly.
 
-Release tag for the current variant:
+Current release tag:
 
-`v21.0.3.2-jjs`
+`v21.0.3.3-jjs`
+
+21.0.3.3 is a naming/metadata release on the same pinned source and stability patch as the tested 21.0.3.2 reference. The add-on ID remains `visualization.projectm`, so Kodi continues to treat it as the same visualization add-on.
 
 ## Repository history
 
