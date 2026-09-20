@@ -37,7 +37,9 @@ def patch_addon(addon: Path) -> None:
     replace_exact(main, old, new, "non-blocking AudioData")
 
     addon_xml = addon / "visualization.projectm" / "addon.xml.in"
-    replace_exact(addon_xml, '  version="21.0.3"\n', '  version="21.0.3.2"\n', "local addon version")
+    replace_exact(addon_xml, '  version="21.0.3"\n', '  version="21.0.3.3"\n', "local addon version")
+    replace_exact(addon_xml, '  name="projectM"\n', '  name="JJS KODI projectM"\n', "JJS add-on name")
+    replace_exact(addon_xml, '  provider-name="Team Kodi">\n', '  provider-name="Team Kodi; JJS">\n', "JJS provider attribution")
 
 
 def verify_projectm(projectm: Path) -> None:
