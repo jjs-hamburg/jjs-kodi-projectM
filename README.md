@@ -159,6 +159,18 @@ texts.
 
 Checksums for the release files.
 
+## Disclaimer
+
+This project was originally created for my own personal use. I am making the
+source code and builds available for anyone who may find them useful, but this
+is not an official Kodi or projectM project and comes without any warranty,
+support commitment, or obligation to provide future updates or maintenance.
+
+To the maximum extent permitted by applicable law, the maintainer of this
+unofficial build shall not be liable for loss of data, loss of functionality,
+incompatibility, interruption, or other damages arising from the use of, or
+inability to use, this software.
+
 ## Source and licensing
 
 The modified Kodi add-on is distributed under **GPL-2.0-or-later**, matching the
