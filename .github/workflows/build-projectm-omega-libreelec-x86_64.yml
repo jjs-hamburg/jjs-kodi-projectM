@@ -138,6 +138,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             bc build-essential curl g++ gcc git gperf make openjdk-11-jre-headless \
+            rdfind libparse-yapp-perl libxml-parser-perl patchutils lzop \
             rsync unzip wget xfonts-utils xsltproc xz-utils zip
 
       - name: Cache LibreELEC downloads and compiler cache
