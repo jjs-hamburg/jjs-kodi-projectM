@@ -97,8 +97,8 @@ jobs:
           find "le-source-root/visualization.projectm-${ADDON_VERSION}" -type d -name .git -prune -exec rm -rf {} +
           find "le-source-root/visualization.projectm-${ADDON_VERSION}" -type f -name .git -delete
 
-          mkdir -p LibreELEC.tv/sources/visualization.projectm
-          archive="LibreELEC.tv/sources/visualization.projectm/visualization.projectm-${ADDON_VERSION}.tar.gz"
+          mkdir -p localdist
+          archive="localdist/visualization.projectm-${ADDON_VERSION}.tar.gz"
           tar -C le-source-root -czf "$archive" "visualization.projectm-${ADDON_VERSION}"
           sha256sum "$archive"
           echo "LE_SOURCE_ARCHIVE=$GITHUB_WORKSPACE/$archive" >> "$GITHUB_ENV"
