@@ -131,6 +131,23 @@ jobs:
           PY
           cat LibreELEC.tv/packages/mediacenter/kodi-binary-addons/visualization.projectm/package.mk
 
+      - name: Enable LibreELEC local file source handler
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("LibreELEC.tv/distributions/LibreELEC/options")
+          s = p.read_text(encoding="utf-8")
+          old = '  GET_HANDLER_SUPPORT="archive"'
+          new = '  GET_HANDLER_SUPPORT="archive file"'
+          if s.count(old) != 1:
+              raise SystemExit("Expected exactly one LibreELEC GET_HANDLER_SUPPORT match")
+          p.write_text(s.replace(old, new, 1), encoding="utf-8")
+          PY
+          grep -F 'GET_HANDLER_SUPPORT="archive file"' LibreELEC.tv/distributions/LibreELEC/options
+
       - name: Install LibreELEC host build requirements
         shell: bash
         run: |
@@ -404,11 +421,6 @@ jobs:
               packages.add(step["name"].split(":", 1)[0])
               for unpack in step.get("unpacks", []):
                   packages.add(unpack.split(":", 1)[0])
-
-          # visualization.projectm is a deliberately local file:// source.
-          # It was already copied and SHA256-verified above; LibreELEC 12's
-          # scripts/get does not enable the file handler for this preflight.
-          packages.discard("visualization.projectm")
 
           with open(sys.argv[2], "w", encoding="utf-8") as f:
               for package in sorted(packages):
