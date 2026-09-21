@@ -283,6 +283,67 @@ jobs:
           grep -F 'PKG_VERSION="1.3.7"' LibreELEC.tv/packages/devel/pax-utils/package.mk
           grep -F 'pax-utils-${PKG_VERSION}.tar.xz' LibreELEC.tv/packages/devel/pax-utils/package.mk
 
+      - name: Preflight all LibreELEC source downloads
+        working-directory: LibreELEC.tv
+        shell: bash
+        env:
+          PROJECT: Generic
+          DEVICE: Generic
+          ARCH: x86_64
+        run: |
+          set -euo pipefail
+          plan_json="$RUNNER_TEMP/libreelec-projectm-plan.json"
+          plan_txt="$RUNNER_TEMP/libreelec-projectm-plan.txt"
+          packages_txt="$RUNNER_TEMP/libreelec-projectm-source-packages.txt"
+
+          # Generate the exact dependency plan used by create_addon,
+          # but download/verify every source before compiling anything.
+          scripts/pkgjson | scripts/genbuildplan.py \
+            --show-wants \
+            --with-json "$plan_json" \
+            --build visualization.projectm > "$plan_txt"
+
+          cat "$plan_txt"
+
+          python3 - "$plan_json" "$packages_txt" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as f:
+              plan = json.load(f)
+
+          packages = set()
+          for step in plan:
+              packages.add(step["name"].split(":", 1)[0])
+              for unpack in step.get("unpacks", []):
+                  packages.add(unpack.split(":", 1)[0])
+
+          with open(sys.argv[2], "w", encoding="utf-8") as f:
+              for package in sorted(packages):
+                  f.write(package + "\n")
+          PY
+
+          echo "LibreELEC source packages to preflight:"
+          cat "$packages_txt"
+
+          failures=()
+          while IFS= read -r package; do
+            [ -n "$package" ] || continue
+            echo "::group::Source preflight: $package"
+            if ! scripts/get "$package"; then
+              failures+=("$package")
+            fi
+            echo "::endgroup::"
+          done < "$packages_txt"
+
+          if [ "${#failures[@]}" -ne 0 ]; then
+            printf 'Source preflight failed for %d package(s):\n' "${#failures[@]}" >&2
+            printf '  %s\n' "${failures[@]}" >&2
+            exit 1
+          fi
+
+          echo "All LibreELEC source downloads verified before compilation."
+
       - name: Build LibreELEC Generic x86_64 visualization.projectm
         working-directory: LibreELEC.tv
         shell: bash
