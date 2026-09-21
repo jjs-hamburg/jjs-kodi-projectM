@@ -159,6 +159,35 @@ jobs:
           cp "$LE_SOURCE_ARCHIVE" "LibreELEC.tv/sources/visualization.projectm/visualization.projectm-${ADDON_VERSION}.tar.gz"
           test "$(sha256sum "LibreELEC.tv/sources/visualization.projectm/visualization.projectm-${ADDON_VERSION}.tar.gz" | awk '{print $1}')" = "$LE_SOURCE_SHA256"
 
+      - name: Preseed verified GNU make 4.4.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/make"
+          archive="$dir/make-4.4.1.tar.gz"
+          expected="dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3"
+          url="https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$archive.tmp" "$url"
+            verify "$archive.tmp"
+            mv "$archive.tmp" "$archive"
+          fi
+
+          printf '%s\n' 'http://ftpmirror.gnu.org/make/make-4.4.1.tar.gz' > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
       - name: Preseed verified GNU m4 1.4.19 source
         shell: bash
         run: |
