@@ -219,6 +219,93 @@ jobs:
 
           sha256sum "$archive"
 
+      - name: Preseed verified GNU gcc 13.2.0 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/gcc"
+          archive="$dir/gcc-13.2.0.tar.xz"
+          expected="e275e76442a6067341a27f04c5c6b83d8613144004c0413528863dc6b5c743da"
+          url="https://ftp.gnu.org/pub/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.xz"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$archive.tmp" "$url"
+            verify "$archive.tmp"
+            mv "$archive.tmp" "$archive"
+          fi
+
+          printf '%s\n' 'https://ftpmirror.gnu.org/gcc/gcc-13.2.0/gcc-13.2.0.tar.xz' > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
+      - name: Preseed verified GNU gmp 6.3.0 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/gmp"
+          archive="$dir/gmp-6.3.0.tar.xz"
+          expected="a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898"
+          url="https://ftp.gnu.org/pub/gnu/gmp/gmp-6.3.0.tar.xz"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$archive.tmp" "$url"
+            verify "$archive.tmp"
+            mv "$archive.tmp" "$archive"
+          fi
+
+          printf '%s\n' 'https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz' > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
+      - name: Preseed verified GNU libtool 2.4.7 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/libtool"
+          archive="$dir/libtool-2.4.7.tar.gz"
+          expected="04e96c2404ea70c590c546eba4202a4e12722c640016c12b9b2f1ce3d481e9a8"
+          url="https://ftp.gnu.org/pub/gnu/libtool/libtool-2.4.7.tar.gz"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$archive.tmp" "$url"
+            verify "$archive.tmp"
+            mv "$archive.tmp" "$archive"
+          fi
+
+          printf '%s\n' 'http://ftpmirror.gnu.org/libtool/libtool-2.4.7.tar.gz' > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
       - name: Preseed verified Gentoo pax-utils 1.3.7 source
         shell: bash
         run: |
@@ -317,6 +404,11 @@ jobs:
               packages.add(step["name"].split(":", 1)[0])
               for unpack in step.get("unpacks", []):
                   packages.add(unpack.split(":", 1)[0])
+
+          # visualization.projectm is a deliberately local file:// source.
+          # It was already copied and SHA256-verified above; LibreELEC 12's
+          # scripts/get does not enable the file handler for this preflight.
+          packages.discard("visualization.projectm")
 
           with open(sys.argv[2], "w", encoding="utf-8") as f:
               for package in sorted(packages):
