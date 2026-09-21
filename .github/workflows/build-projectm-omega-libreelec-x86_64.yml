@@ -159,6 +159,37 @@ jobs:
           cp "$LE_SOURCE_ARCHIVE" "LibreELEC.tv/sources/visualization.projectm/visualization.projectm-${ADDON_VERSION}.tar.gz"
           test "$(sha256sum "LibreELEC.tv/sources/visualization.projectm/visualization.projectm-${ADDON_VERSION}.tar.gz" | awk '{print $1}')" = "$LE_SOURCE_SHA256"
 
+      - name: Preseed verified GNU m4 1.4.19 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/m4"
+          archive="$dir/m4-1.4.19.tar.bz2"
+          expected="b306a91c0fd93bc4280cfc2e98cb7ab3981ff75a187bea3293811f452c89a8c8"
+          url="https://ftp.gnu.org/gnu/m4/m4-1.4.19.tar.bz2"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$archive.tmp" "$url"
+            verify "$archive.tmp"
+            mv "$archive.tmp" "$archive"
+          fi
+
+          # LibreELEC's downloader considers a cached source valid only when
+          # its URL/SHA stamp files are present as well.
+          printf '%s\n' 'http://ftpmirror.gnu.org/m4/m4-1.4.19.tar.bz2' > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
       - name: Build LibreELEC Generic x86_64 visualization.projectm
         working-directory: LibreELEC.tv
         shell: bash
