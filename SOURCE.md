@@ -25,9 +25,9 @@ The JJS source transformation is:
 It performs only the documented stability change and the JJS
 name/version/provider metadata changes.
 
-## Release source archive
+## Release source archives
 
-Every public 21.0.3.3 release contains the Android corresponding-source archive:
+The Android AArch64 release (`v21.0.3.3-jjs`) contains:
 
 `jjs-kodi-projectm-21.0.3.3-source.zip`
 
@@ -39,7 +39,8 @@ That archive contains:
 - the GitHub Actions build workflow
 - README, notice and license files
 
-The LibreELEC Generic x86_64 build additionally publishes:
+The separate LibreELEC 12.0.2 Generic x86_64 release
+(`v21.0.3.3-jjs-libreelec-x86_64`) contains:
 
 `jjs-kodi-projectm-21.0.3.3-libreelec-x86_64-source.zip`
 
