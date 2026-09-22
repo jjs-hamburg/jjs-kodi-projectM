@@ -1,0 +1,622 @@
+name: Build projectM Omega LibreELEC x86_64
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-projectm-omega-libreelec-x86_64.yml"
+      - "patch/**"
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-projectm-omega-libreelec-x86_64.yml"
+      - "patch/**"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    env:
+      LIBREELEC_REF: f3fdd11916f8a47dc5a11c3a4c99cb7c7ffac78b
+      ADDON_REF: d91f39d9ee9f06f998fe83d58154d36331d2c666
+      PROJECTM_REF: b3c3282eb00fae210e9499fa9d11bcfcccffbd96
+      ADDON_VERSION: 21.0.3.3
+      LE_ADDON_ZIP: visualization.projectm-21.0.3.3-omega-libreelec-x86_64.zip
+      LE_SOURCE_ZIP: jjs-kodi-projectm-21.0.3.3-libreelec-x86_64-source.zip
+
+    steps:
+      - name: Checkout build repository
+        uses: actions/checkout@v5
+
+      - name: Free runner disk space
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup || true
+          df -h /
+
+      - name: Checkout LibreELEC 12.0.2
+        uses: actions/checkout@v5
+        with:
+          repository: LibreELEC/LibreELEC.tv
+          ref: 12.0.2
+          path: LibreELEC.tv
+          fetch-depth: 1
+
+      - name: Checkout pinned visualization.projectm Omega source
+        uses: actions/checkout@v5
+        with:
+          repository: xbmc/visualization.projectm
+          ref: ${{ env.ADDON_REF }}
+          path: visualization.projectm
+          fetch-depth: 1
+
+      - name: Checkout pinned projectM 3.1.12 source
+        uses: actions/checkout@v5
+        with:
+          repository: projectM-visualizer/projectm
+          ref: ${{ env.PROJECTM_REF }}
+          path: projectM-3.1.12
+          fetch-depth: 1
+          submodules: recursive
+
+      - name: Verify exact source revisions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C LibreELEC.tv rev-parse HEAD)" = "$LIBREELEC_REF"
+          test "$(git -C visualization.projectm rev-parse HEAD)" = "$ADDON_REF"
+          test "$(git -C projectM-3.1.12 rev-parse HEAD)" = "$PROJECTM_REF"
+          grep -F 'PKG_VERSION="21.0.3-Omega"' LibreELEC.tv/packages/mediacenter/kodi-binary-addons/visualization.projectm/package.mk
+          grep -F 'PKG_VERSION="3.1.12"' LibreELEC.tv/packages/graphics/libprojectM/package.mk
+
+      - name: Apply shared JJS audio-isolation transformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 patch/apply_changes.py \
+            --addon "$GITHUB_WORKSPACE/visualization.projectm" \
+            --projectm "$GITHUB_WORKSPACE/projectM-3.1.12"
+          grep -F 'std::try_to_lock' visualization.projectm/src/Main.cpp
+          grep -F 'version="21.0.3.3"' visualization.projectm/visualization.projectm/addon.xml.in
+          grep -F 'name="JJS KODI projectM"' visualization.projectm/visualization.projectm/addon.xml.in
+
+      - name: Prepare exact JJS source archive for LibreELEC package build
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf le-source-root
+          mkdir -p "le-source-root/visualization.projectm-${ADDON_VERSION}"
+          cp -a visualization.projectm/. "le-source-root/visualization.projectm-${ADDON_VERSION}/"
+          find "le-source-root/visualization.projectm-${ADDON_VERSION}" -type d -name .git -prune -exec rm -rf {} +
+          find "le-source-root/visualization.projectm-${ADDON_VERSION}" -type f -name .git -delete
+
+          mkdir -p localdist
+          archive="localdist/visualization.projectm-${ADDON_VERSION}.tar.gz"
+          tar -C le-source-root -czf "$archive" "visualization.projectm-${ADDON_VERSION}"
+          sha256sum "$archive"
+          echo "LE_SOURCE_ARCHIVE=$GITHUB_WORKSPACE/$archive" >> "$GITHUB_ENV"
+          echo "LE_SOURCE_SHA256=$(sha256sum "$archive" | awk '{print $1}')" >> "$GITHUB_ENV"
+
+      - name: Point LibreELEC package recipe at exact transformed source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          p = Path("LibreELEC.tv/packages/mediacenter/kodi-binary-addons/visualization.projectm/package.mk")
+          s = p.read_text(encoding="utf-8")
+
+          replacements = [
+              ('PKG_VERSION="21.0.3-Omega"', 'PKG_VERSION="21.0.3.3"'),
+              ('PKG_REV="1"', 'PKG_REV="1"\nPKG_ADDON_VERSION="21.0.3.3"'),
+              ('PKG_SHA256="aee6c038a48c68868edb1178e9ae980b1082de82db2e4b36c6b99c65ec5e88ca"',
+               f'PKG_SHA256="{os.environ["LE_SOURCE_SHA256"]}"'),
+              ('PKG_URL="https://github.com/xbmc/visualization.projectm/archive/${PKG_VERSION}.tar.gz"',
+               'PKG_URL="file://${SOURCES}/${PKG_NAME}/visualization.projectm-${PKG_VERSION}.tar.gz"'),
+          ]
+          for old, new in replacements:
+              if s.count(old) != 1:
+                  raise SystemExit(f"Expected exactly one LibreELEC package recipe match: {old!r}")
+              s = s.replace(old, new, 1)
+
+          p.write_text(s, encoding="utf-8")
+          PY
+          cat LibreELEC.tv/packages/mediacenter/kodi-binary-addons/visualization.projectm/package.mk
+
+      - name: Enable LibreELEC local file source handler
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("LibreELEC.tv/distributions/LibreELEC/options")
+          s = p.read_text(encoding="utf-8")
+          old = '  GET_HANDLER_SUPPORT="archive"'
+          new = '  GET_HANDLER_SUPPORT="archive file"'
+          if s.count(old) != 1:
+              raise SystemExit("Expected exactly one LibreELEC GET_HANDLER_SUPPORT match")
+          p.write_text(s.replace(old, new, 1), encoding="utf-8")
+          PY
+          grep -F 'GET_HANDLER_SUPPORT="archive file"' LibreELEC.tv/distributions/LibreELEC/options
+
+      - name: Install LibreELEC host build requirements
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc build-essential curl g++ gcc git gperf make openjdk-11-jre-headless \
+            rdfind libparse-yapp-perl libxml-parser-perl patchutils lzop \
+            rsync unzip wget xfonts-utils xsltproc xz-utils zip
+
+      - name: Cache LibreELEC downloads and compiler cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            LibreELEC.tv/sources
+            LibreELEC.tv/build.LibreELEC-Generic.x86_64-12.0.2/.ccache
+          key: libreelec-12.0.2-generic-x86_64-projectm-${{ env.ADDON_REF }}-${{ env.PROJECTM_REF }}
+          restore-keys: |
+            libreelec-12.0.2-generic-x86_64-projectm-
+
+      - name: Restore exact local visualization source after cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p LibreELEC.tv/sources/visualization.projectm
+          cp "$LE_SOURCE_ARCHIVE" "LibreELEC.tv/sources/visualization.projectm/visualization.projectm-${ADDON_VERSION}.tar.gz"
+          test "$(sha256sum "LibreELEC.tv/sources/visualization.projectm/visualization.projectm-${ADDON_VERSION}.tar.gz" | awk '{print $1}')" = "$LE_SOURCE_SHA256"
+
+          # LibreELEC 12 scripts/extract resolves file:// sources via
+          # PKG_SOURCE_NAME relative to the LibreELEC working directory.
+          cp "$LE_SOURCE_ARCHIVE" "LibreELEC.tv/visualization.projectm-${ADDON_VERSION}.tar.gz"
+          test "$(sha256sum "LibreELEC.tv/visualization.projectm-${ADDON_VERSION}.tar.gz" | awk '{print $1}')" = "$LE_SOURCE_SHA256"
+
+      - name: Preseed verified GNU make 4.4.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/make"
+          archive="$dir/make-4.4.1.tar.gz"
+          expected="dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3"
+          url="https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$archive.tmp" "$url"
+            verify "$archive.tmp"
+            mv "$archive.tmp" "$archive"
+          fi
+
+          printf '%s\n' 'http://ftpmirror.gnu.org/make/make-4.4.1.tar.gz' > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
+      - name: Preseed verified GNU m4 1.4.19 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/m4"
+          archive="$dir/m4-1.4.19.tar.bz2"
+          expected="b306a91c0fd93bc4280cfc2e98cb7ab3981ff75a187bea3293811f452c89a8c8"
+          url="https://ftp.gnu.org/gnu/m4/m4-1.4.19.tar.bz2"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$archive.tmp" "$url"
+            verify "$archive.tmp"
+            mv "$archive.tmp" "$archive"
+          fi
+
+          # LibreELEC's downloader considers a cached source valid only when
+          # its URL/SHA stamp files are present as well.
+          printf '%s\n' 'http://ftpmirror.gnu.org/m4/m4-1.4.19.tar.bz2' > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
+      - name: Preseed verified GNU automake 1.16.5 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/automake"
+          archive="$dir/automake-1.16.5.tar.xz"
+          expected="f01d58cd6d9d77fbdca9eb4bbd5ead1988228fdb73d6f7a201f5f8d6b118b469"
+          url="https://ftp.gnu.org/gnu/automake/automake-1.16.5.tar.xz"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$archive.tmp" "$url"
+            verify "$archive.tmp"
+            mv "$archive.tmp" "$archive"
+          fi
+
+          printf '%s\n' 'http://ftpmirror.gnu.org/automake/automake-1.16.5.tar.xz' > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
+      - name: Preseed verified GNU gcc 13.2.0 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/gcc"
+          archive="$dir/gcc-13.2.0.tar.xz"
+          expected="e275e76442a6067341a27f04c5c6b83d8613144004c0413528863dc6b5c743da"
+          url="https://ftp.gnu.org/pub/gnu/gcc/gcc-13.2.0/gcc-13.2.0.tar.xz"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$archive.tmp" "$url"
+            verify "$archive.tmp"
+            mv "$archive.tmp" "$archive"
+          fi
+
+          printf '%s\n' 'https://ftpmirror.gnu.org/gcc/gcc-13.2.0/gcc-13.2.0.tar.xz' > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
+      - name: Preseed verified GNU gmp 6.3.0 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/gmp"
+          archive="$dir/gmp-6.3.0.tar.xz"
+          expected="a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898"
+          url="https://ftp.gnu.org/pub/gnu/gmp/gmp-6.3.0.tar.xz"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$archive.tmp" "$url"
+            verify "$archive.tmp"
+            mv "$archive.tmp" "$archive"
+          fi
+
+          printf '%s\n' 'https://gmplib.org/download/gmp/gmp-6.3.0.tar.xz' > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
+      - name: Preseed verified GNU libtool 2.4.7 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/libtool"
+          archive="$dir/libtool-2.4.7.tar.gz"
+          expected="04e96c2404ea70c590c546eba4202a4e12722c640016c12b9b2f1ce3d481e9a8"
+          url="https://ftp.gnu.org/pub/gnu/libtool/libtool-2.4.7.tar.gz"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$archive.tmp" "$url"
+            verify "$archive.tmp"
+            mv "$archive.tmp" "$archive"
+          fi
+
+          printf '%s\n' 'http://ftpmirror.gnu.org/libtool/libtool-2.4.7.tar.gz' > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
+      - name: Preseed verified Gentoo pax-utils 1.3.7 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/pax-utils"
+          archive="$dir/pax-utils-1.3.7.tar.xz"
+          expected_sha512="f1b87a564573da838a02c4cc10e0d5f9754c3b004ecb172a6290b48a8179b30695ae556942457dfac3caf07b91dd56eb1d801475c35e9708e4d671aa507f9576"
+          canonical_url="https://dev.gentoo.org/~sam/distfiles/app-misc/pax-utils/pax-utils-1.3.7.tar.xz"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha512sum "$1" | awk '{print $1}')" = "$expected_sha512" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            ok=0
+            for url in \
+              "$canonical_url" \
+              "https://dev.gentoo.org/~vapier/dist/pax-utils-1.3.7.tar.xz" \
+              "https://distfiles.gentoo.org/distfiles/e9/pax-utils-1.3.7.tar.xz"
+            do
+              rm -f "$archive.tmp"
+              if curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+                   --output "$archive.tmp" "$url" && verify "$archive.tmp"; then
+                mv "$archive.tmp" "$archive"
+                ok=1
+                break
+              fi
+            done
+            test "$ok" -eq 1
+          fi
+
+          pax_sha256="$(sha256sum "$archive" | awk '{print $1}')"
+
+          PAX_UTILS_SHA256="$pax_sha256" python3 - <<'PY'
+          from pathlib import Path
+          import os
+
+          p = Path("LibreELEC.tv/packages/devel/pax-utils/package.mk")
+          s = p.read_text(encoding="utf-8")
+          replacements = [
+              ('PKG_SHA256="907fdcfc6c6c2913a8e42847f8096027b0a953b9344208d14daf2324fd711638"',
+               f'PKG_SHA256="{os.environ["PAX_UTILS_SHA256"]}"'),
+              ('PKG_URL="https://gitweb.gentoo.org/proj/pax-utils.git/snapshot/pax-utils-${PKG_VERSION}.tar.bz2"',
+               'PKG_URL="https://dev.gentoo.org/~sam/distfiles/app-misc/pax-utils/pax-utils-${PKG_VERSION}.tar.xz"'),
+          ]
+          for old, new in replacements:
+              if s.count(old) != 1:
+                  raise SystemExit(f"Expected exactly one LibreELEC pax-utils recipe match: {old!r}")
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding="utf-8")
+          PY
+
+          printf '%s\n' "$canonical_url" > "$archive.url"
+          printf '%s\n' "$pax_sha256" > "$archive.sha256"
+
+          sha512sum "$archive"
+          sha256sum "$archive"
+          grep -F 'PKG_VERSION="1.3.7"' LibreELEC.tv/packages/devel/pax-utils/package.mk
+          grep -F 'pax-utils-${PKG_VERSION}.tar.xz' LibreELEC.tv/packages/devel/pax-utils/package.mk
+
+      - name: Preflight all LibreELEC source downloads
+        working-directory: LibreELEC.tv
+        shell: bash
+        env:
+          PROJECT: Generic
+          DEVICE: Generic
+          ARCH: x86_64
+        run: |
+          set -euo pipefail
+          plan_json="$RUNNER_TEMP/libreelec-projectm-plan.json"
+          plan_txt="$RUNNER_TEMP/libreelec-projectm-plan.txt"
+          packages_txt="$RUNNER_TEMP/libreelec-projectm-source-packages.txt"
+
+          # Generate the exact dependency plan used by create_addon,
+          # but download/verify every source before compiling anything.
+          scripts/pkgjson | scripts/genbuildplan.py \
+            --show-wants \
+            --with-json "$plan_json" \
+            --build visualization.projectm > "$plan_txt"
+
+          cat "$plan_txt"
+
+          python3 - "$plan_json" "$packages_txt" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as f:
+              plan = json.load(f)
+
+          packages = set()
+          for step in plan:
+              packages.add(step["name"].split(":", 1)[0])
+              for unpack in step.get("unpacks", []):
+                  packages.add(unpack.split(":", 1)[0])
+
+          with open(sys.argv[2], "w", encoding="utf-8") as f:
+              for package in sorted(packages):
+                  f.write(package + "\n")
+          PY
+
+          echo "LibreELEC source packages to preflight:"
+          cat "$packages_txt"
+
+          failures=()
+          while IFS= read -r package; do
+            [ -n "$package" ] || continue
+            echo "::group::Source preflight: $package"
+            if ! scripts/get "$package"; then
+              failures+=("$package")
+            fi
+            echo "::endgroup::"
+          done < "$packages_txt"
+
+          if [ "${#failures[@]}" -ne 0 ]; then
+            printf 'Source preflight failed for %d package(s):\n' "${#failures[@]}" >&2
+            printf '  %s\n' "${failures[@]}" >&2
+            exit 1
+          fi
+
+          echo "All LibreELEC source downloads verified before compilation."
+
+      - name: Build LibreELEC Generic x86_64 visualization.projectm
+        working-directory: LibreELEC.tv
+        shell: bash
+        env:
+          PROJECT: Generic
+          DEVICE: Generic
+          ARCH: x86_64
+          MTPROGRESS: "no"
+        run: |
+          set -euo pipefail
+          scripts/create_addon visualization.projectm
+
+      - name: Locate and normalize LibreELEC add-on ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out le-package
+          mapfile -t zips < <(find LibreELEC.tv/target -type f -name 'visualization.projectm-*.zip' | sort)
+          printf 'LibreELEC add-on ZIP candidates:\n'
+          printf '%s\n' "${zips[@]}"
+          test "${#zips[@]}" -gt 0
+
+          unzip -q "${zips[0]}" -d le-package
+          test -f le-package/visualization.projectm/addon.xml
+
+          cp LICENSE.md le-package/visualization.projectm/LICENSE.md
+          cp LICENSE-projectM-LGPL-2.1.txt le-package/visualization.projectm/LICENSE-projectM-LGPL-2.1.txt
+          cp NOTICE.md le-package/visualization.projectm/NOTICE.md
+          cp SOURCE.md le-package/visualization.projectm/SOURCE.md
+
+          (cd le-package && zip -qr "../out/$LE_ADDON_ZIP" visualization.projectm)
+          sha256sum "out/$LE_ADDON_ZIP" | tee out/SHA256SUMS-libreelec-x86_64.txt
+
+      - name: Preserve LibreELEC package before validation
+        uses: actions/upload-artifact@v4
+        with:
+          name: libreelec-x86_64-prevalidation
+          path: |
+            out/${{ env.LE_ADDON_ZIP }}
+            out/SHA256SUMS-libreelec-x86_64.txt
+          if-no-files-found: error
+
+      - name: Validate LibreELEC package
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf le-validate
+          mkdir le-validate
+          unzip -q "out/$LE_ADDON_ZIP" -d le-validate
+
+          addon="le-validate/visualization.projectm/addon.xml"
+          test -f "$addon"
+          grep -F 'version="21.0.3.3"' "$addon"
+          grep -F 'name="JJS KODI projectM"' "$addon"
+          grep -F 'provider-name="Team Kodi; JJS"' "$addon"
+          # LibreELEC 12.0.2 builds binary add-ons against kodi:host, whose
+          # generated KodiConfig.cmake has an empty PLATFORM_TAG. The actual
+          # Linux binding is therefore validated via library_linux below.
+          grep -F 'library_linux=' "$addon"
+
+          lib_name="$(python3 - "$addon" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse(sys.argv[1]).getroot()
+          for extension in root.findall("extension"):
+              if extension.get("point") == "xbmc.player.musicviz":
+                  library = extension.get("library_linux")
+                  if library:
+                      print(library)
+                      break
+          else:
+              raise SystemExit("library_linux not found in visualization extension")
+          PY
+          )"
+          test -n "$lib_name"
+          lib="le-validate/visualization.projectm/$lib_name"
+          printf 'LibreELEC binary: %s\n' "$lib"
+          test -f "$lib"
+          file "$lib" | grep -E 'ELF 64-bit.*x86-64'
+          readelf -h "$lib" | grep -F 'Advanced Micro Devices X86-64'
+          grep -F 'std::try_to_lock' visualization.projectm/src/Main.cpp
+
+          test -s le-validate/visualization.projectm/LICENSE.md
+          test -s le-validate/visualization.projectm/LICENSE-projectM-LGPL-2.1.txt
+          test -s le-validate/visualization.projectm/NOTICE.md
+          test -s le-validate/visualization.projectm/SOURCE.md
+
+      - name: Package LibreELEC corresponding source and build recipe
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf le-corresponding-source
+          root="le-corresponding-source/jjs-kodi-projectm-${ADDON_VERSION}-libreelec-x86_64"
+          mkdir -p "$root/build"
+
+          cp -a visualization.projectm "$root/visualization.projectm"
+          cp -a projectM-3.1.12 "$root/projectM-3.1.12"
+          find "$root" -type d -name .git -prune -exec rm -rf {} +
+          find "$root" -type f -name .git -delete
+
+          cp patch/apply_changes.py "$root/build/apply_changes.py"
+          cp .github/workflows/build-projectm-omega-libreelec-x86_64.yml "$root/build/"
+          cp LibreELEC.tv/packages/mediacenter/kodi-binary-addons/visualization.projectm/package.mk "$root/build/libreelec-visualization.projectm-package.mk"
+          cp README.md NOTICE.md SOURCE.md LICENSE.md LICENSE-projectM-LGPL-2.1.txt "$root/"
+
+          (cd le-corresponding-source && zip -qr "../out/$LE_SOURCE_ZIP" "jjs-kodi-projectm-${ADDON_VERSION}-libreelec-x86_64")
+          sha256sum "out/$LE_SOURCE_ZIP" >> out/SHA256SUMS-libreelec-x86_64.txt
+
+      - name: Validate LibreELEC corresponding source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf le-source-validate
+          mkdir le-source-validate
+          unzip -q "out/$LE_SOURCE_ZIP" -d le-source-validate
+          root="le-source-validate/jjs-kodi-projectm-${ADDON_VERSION}-libreelec-x86_64"
+          test -s "$root/visualization.projectm/src/Main.cpp"
+          grep -F 'std::try_to_lock' "$root/visualization.projectm/src/Main.cpp"
+          test -s "$root/projectM-3.1.12/src/libprojectM/projectM.cpp"
+          test -s "$root/build/build-projectm-omega-libreelec-x86_64.yml"
+          test -s "$root/build/libreelec-visualization.projectm-package.mk"
+
+      - name: Publish LibreELEC files to existing JJS release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v${ADDON_VERSION}-jjs"
+          gh release view "$tag" >/dev/null
+          gh release upload "$tag" \
+            "out/$LE_ADDON_ZIP" \
+            "out/$LE_SOURCE_ZIP" \
+            out/SHA256SUMS-libreelec-x86_64.txt \
+            --clobber

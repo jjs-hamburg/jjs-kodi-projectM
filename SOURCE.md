@@ -11,8 +11,10 @@ published with the release and is also reconstructible from this repository.
   `d91f39d9ee9f06f998fe83d58154d36331d2c666`
 - projectM 3.1.12:
   `b3c3282eb00fae210e9499fa9d11bcfcccffbd96`
+- LibreELEC 12.0.2:
+  `f3fdd11916f8a47dc5a11c3a4c99cb7c7ffac78b`
 
-The workflow checks these exact commit IDs before compiling.
+The workflows check the relevant exact commit IDs before compiling.
 
 ## Local modification
 
@@ -25,7 +27,7 @@ name/version/provider metadata changes.
 
 ## Release source archive
 
-Every public 21.0.3.3 release contains:
+Every public 21.0.3.3 release contains the Android corresponding-source archive:
 
 `jjs-kodi-projectm-21.0.3.3-source.zip`
 
@@ -37,11 +39,22 @@ That archive contains:
 - the GitHub Actions build workflow
 - README, notice and license files
 
-The Kodi source tree is not bundled into that archive because it is the build
-environment rather than a modified component of this add-on. The exact Kodi
-revision is pinned above and in the workflow and can be retrieved from:
+The LibreELEC Generic x86_64 build additionally publishes:
+
+`jjs-kodi-projectm-21.0.3.3-libreelec-x86_64-source.zip`
+
+That archive contains the patched `visualization.projectm` source tree, the
+unmodified projectM 3.1.12 source tree, the JJS source transformer, the exact
+LibreELEC workflow, and the modified LibreELEC
+`visualization.projectm/package.mk` recipe used for the build.
+
+The Kodi and LibreELEC source trees are not bundled in full because they are
+pinned build environments rather than modified components of this add-on. Their
+exact revisions are pinned above and in the workflows and can be retrieved from:
 
 https://github.com/xbmc/xbmc
+
+https://github.com/LibreELEC/LibreELEC.tv
 
 ## Binary reference
 

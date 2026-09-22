@@ -1,7 +1,8 @@
 # JJS KODI projectM
 
 **JJS KODI projectM** is an unofficial stability build of Kodi's
-`visualization.projectm` add-on for **Kodi 21/Omega on Android AArch64**.
+`visualization.projectm` add-on for **Kodi 21/Omega on Android AArch64 and
+LibreELEC Generic x86_64**.
 
 It was created to solve a very specific playback problem: on the tested NVIDIA
 Shield setup, some projectM preset changes could briefly stall Kodi's audio
@@ -23,12 +24,13 @@ distinguishable from the unmodified upstream version.
 
 **JJS KODI projectM 21.0.3.3**
 
-Target environment:
+Target environments:
 
 - Kodi 21/Omega
 - Android AArch64
 - Android API 21
 - Android NDK r21e / 21.4.7075529
+- LibreELEC 12.0.2 Generic x86_64
 - projectM 3.1.12
 
 The last pre-naming binary tested directly on the NVIDIA Shield was version
@@ -105,9 +107,10 @@ The build is intentionally pinned to the exact revisions used by the known-good
 | Kodi Omega build environment | `f8815ee40f49a700c047982d752be4b2a61420e2` |
 | xbmc/visualization.projectm | `d91f39d9ee9f06f998fe83d58154d36331d2c666` |
 | projectM 3.1.12 | `b3c3282eb00fae210e9499fa9d11bcfcccffbd96` |
+| LibreELEC 12.0.2 | `f3fdd11916f8a47dc5a11c3a4c99cb7c7ffac78b` |
 
-The workflow verifies all three commit IDs before patching or compiling. Moving
-upstream `Omega` branches therefore cannot silently change the build input.
+The workflows verify the relevant pinned revisions before patching or compiling.
+Moving upstream branches therefore cannot silently change the build input.
 
 ## Reproducible build
 
@@ -126,11 +129,25 @@ The GitHub Actions workflow performs the complete Android AArch64 build:
 The build caches are keyed to the pinned Kodi revision, Android API level and
 NDK version. They shorten the build but do not define the source version.
 
+The LibreELEC workflow performs the corresponding Generic x86_64 build from the
+same transformed `visualization.projectm` source. It pins LibreELEC 12.0.2,
+preflights and SHA-verifies the LibreELEC source dependency plan, builds the
+add-on with LibreELEC's own `scripts/create_addon`, normalizes the installable
+ZIP, preserves that ZIP as a GitHub Actions artifact before validation, verifies
+the add-on metadata and x86-64 ELF binary, and creates a corresponding-source
+archive containing the exact build recipe used.
+
 ## Installation
 
-Open the current GitHub Release and download:
+Open the current GitHub Release and download the ZIP for your platform:
+
+Android AArch64:
 
 `visualization.projectm-21.0.3.3-omega-android-aarch64.zip`
+
+LibreELEC Generic x86_64:
+
+`visualization.projectm-21.0.3.3-omega-libreelec-x86_64.zip`
 
 In Kodi use:
 
@@ -146,7 +163,11 @@ A public release contains:
 
 `visualization.projectm-21.0.3.3-omega-android-aarch64.zip`
 
-The directly installable Kodi add-on.
+The directly installable Android AArch64 Kodi add-on.
+
+`visualization.projectm-21.0.3.3-omega-libreelec-x86_64.zip`
+
+The directly installable LibreELEC Generic x86_64 Kodi add-on.
 
 `jjs-kodi-projectm-21.0.3.3-source.zip`
 
@@ -155,9 +176,18 @@ The corresponding source package containing the patched
 the build, the source transformer, build workflow, README, notices and license
 texts.
 
+`jjs-kodi-projectm-21.0.3.3-libreelec-x86_64-source.zip`
+
+The corresponding source package for the LibreELEC build, including the exact
+LibreELEC package recipe used for that build.
+
 `SHA256SUMS.txt`
 
-Checksums for the release files.
+Checksums for the Android release files.
+
+`SHA256SUMS-libreelec-x86_64.txt`
+
+Checksums for the LibreELEC release files.
 
 ## Disclaimer
 
