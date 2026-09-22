@@ -241,6 +241,35 @@ jobs:
 
           sha256sum "$archive"
 
+      - name: Preseed verified GNU automake 1.16.5 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/automake"
+          archive="$dir/automake-1.16.5.tar.xz"
+          expected="f01d58cd6d9d77fbdca9eb4bbd5ead1988228fdb73d6f7a201f5f8d6b118b469"
+          url="https://ftp.gnu.org/gnu/automake/automake-1.16.5.tar.xz"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+              --output "$archive.tmp" "$url"
+            verify "$archive.tmp"
+            mv "$archive.tmp" "$archive"
+          fi
+
+          printf '%s\n' 'http://ftpmirror.gnu.org/automake/automake-1.16.5.tar.xz' > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
       - name: Preseed verified GNU gcc 13.2.0 source
         shell: bash
         run: |
