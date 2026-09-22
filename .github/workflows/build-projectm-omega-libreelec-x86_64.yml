@@ -120,7 +120,7 @@ jobs:
               ('PKG_SHA256="aee6c038a48c68868edb1178e9ae980b1082de82db2e4b36c6b99c65ec5e88ca"',
                f'PKG_SHA256="{os.environ["LE_SOURCE_SHA256"]}"'),
               ('PKG_URL="https://github.com/xbmc/visualization.projectm/archive/${PKG_VERSION}.tar.gz"',
-               'PKG_SOURCE_NAME="visualization.projectm-${PKG_VERSION}.tar.gz"\nPKG_URL="file://${SOURCES}/${PKG_NAME}/${PKG_SOURCE_NAME}"'),
+               'PKG_URL="file://${SOURCES}/${PKG_NAME}/visualization.projectm-${PKG_VERSION}.tar.gz"'),
           ]
           for old, new in replacements:
               if s.count(old) != 1:
