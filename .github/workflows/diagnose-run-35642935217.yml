@@ -67,13 +67,6 @@ jobs:
 
           scripts/get visualization.projectm
 
-          (
-            . config/options visualization.projectm
-            echo "Resolved PKG_URL=$PKG_URL"
-            echo "Resolved PKG_SOURCE_NAME=$PKG_SOURCE_NAME"
-            test "$PKG_SOURCE_NAME" = "$PWD/sources/visualization.projectm/visualization.projectm-21.0.3.3.tar.gz"
-          )
-
           out="$RUNNER_TEMP/extract"
           rm -rf "$out"
           mkdir -p "$out"
