@@ -1,0 +1,153 @@
+name: Promote projectM Omega LibreELEC x86_64
+
+on:
+  pull_request:
+    types:
+      - closed
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-projectm-omega-libreelec-x86_64.yml"
+      - "patch/**"
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "Successful PR build run ID containing libreelec-x86_64-validated"
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  promote:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    runs-on: ubuntu-22.04
+    env:
+      ADDON_VERSION: 21.0.3.3
+      LE_ADDON_ZIP: visualization.projectm-21.0.3.3-omega-libreelec-x86_64.zip
+      LE_SOURCE_ZIP: jjs-kodi-projectm-21.0.3.3-libreelec-x86_64-source.zip
+      BUILD_WORKFLOW: build-projectm-omega-libreelec-x86_64.yml
+      CANDIDATE_ARTIFACT: libreelec-x86_64-validated
+
+    steps:
+      - name: Resolve validated PR build
+        id: resolve
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANUAL_RUN_ID: ${{ inputs.run_id }}
+          PR_HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            run_id="${MANUAL_RUN_ID}"
+          else
+            runs_json="$(gh api -X GET               "repos/${GITHUB_REPOSITORY}/actions/workflows/${BUILD_WORKFLOW}/runs"               -f event=pull_request               -f branch="${PR_HEAD_BRANCH}"               -f per_page=100)"
+
+            run_id="$(jq -r --arg repo "${PR_HEAD_REPO}" '
+              [.workflow_runs[]
+               | select(.head_repository.full_name == $repo)]
+              | sort_by(.created_at)
+              | last
+              | .id // empty
+            ' <<<"${runs_json}")"
+          fi
+
+          test -n "${run_id}"
+
+          run_json="$(gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}")"
+          status="$(jq -r '.status' <<<"${run_json}")"
+          conclusion="$(jq -r '.conclusion' <<<"${run_json}")"
+          event="$(jq -r '.event' <<<"${run_json}")"
+
+          printf 'Candidate run: %s\n' "${run_id}"
+          printf 'Event/status/conclusion: %s / %s / %s\n' "${event}" "${status}" "${conclusion}"
+
+          test "${event}" = "pull_request"
+          test "${status}" = "completed"
+          test "${conclusion}" = "success"
+
+          artifact_count="$(gh api             "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts"             --jq "[.artifacts[] | select(.name == \"${CANDIDATE_ARTIFACT}\" and .expired == false)] | length")"
+          test "${artifact_count}" = "1"
+
+          echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
+
+      - name: Download validated LibreELEC release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CANDIDATE_ARTIFACT }}
+          path: candidate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.resolve.outputs.run_id }}
+
+      - name: Revalidate downloaded release candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -s "candidate/${LE_ADDON_ZIP}"
+          test -s "candidate/${LE_SOURCE_ZIP}"
+          test -s candidate/SHA256SUMS-libreelec-x86_64.txt
+
+          rm -rf validate-addon validate-source
+          mkdir validate-addon validate-source
+          unzip -q "candidate/${LE_ADDON_ZIP}" -d validate-addon
+          unzip -q "candidate/${LE_SOURCE_ZIP}" -d validate-source
+
+          addon="validate-addon/visualization.projectm/addon.xml"
+          test -s "${addon}"
+          grep -F 'version="21.0.3.3"' "${addon}"
+          grep -F 'name="JJS KODI projectM"' "${addon}"
+          grep -F 'provider-name="Team Kodi; JJS"' "${addon}"
+          grep -F 'library_linux=' "${addon}"
+
+          lib_name="$(python3 - "${addon}" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse(sys.argv[1]).getroot()
+          for extension in root.findall("extension"):
+              if extension.get("point") == "xbmc.player.musicviz":
+                  library = extension.get("library_linux")
+                  if library:
+                      print(library)
+                      break
+          else:
+              raise SystemExit("library_linux not found in visualization extension")
+          PY
+          )"
+
+          test -n "${lib_name}"
+          lib="validate-addon/visualization.projectm/${lib_name}"
+          test -s "${lib}"
+          file "${lib}" | grep -E 'ELF 64-bit.*x86-64'
+          readelf -h "${lib}" | grep -F 'Advanced Micro Devices X86-64'
+
+          source_root="validate-source/jjs-kodi-projectm-${ADDON_VERSION}-libreelec-x86_64"
+          test -s "${source_root}/visualization.projectm/src/Main.cpp"
+          grep -F 'std::try_to_lock' "${source_root}/visualization.projectm/src/Main.cpp"
+          test -s "${source_root}/projectM-3.1.12/src/libprojectM/projectM.cpp"
+          test -s "${source_root}/build/build-projectm-omega-libreelec-x86_64.yml"
+          test -s "${source_root}/build/libreelec-visualization.projectm-package.mk"
+
+          expected_addon="$(awk -v f="out/${LE_ADDON_ZIP}" '$2 == f {print $1}' candidate/SHA256SUMS-libreelec-x86_64.txt)"
+          expected_source="$(awk -v f="out/${LE_SOURCE_ZIP}" '$2 == f {print $1}' candidate/SHA256SUMS-libreelec-x86_64.txt)"
+          test -n "${expected_addon}"
+          test -n "${expected_source}"
+          test "$(sha256sum "candidate/${LE_ADDON_ZIP}" | awk '{print $1}')" = "${expected_addon}"
+          test "$(sha256sum "candidate/${LE_SOURCE_ZIP}" | awk '{print $1}')" = "${expected_source}"
+
+      - name: Publish validated LibreELEC release candidate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v${ADDON_VERSION}-jjs"
+          gh release view "${tag}" >/dev/null
+          gh release upload "${tag}"             "candidate/${LE_ADDON_ZIP}"             "candidate/${LE_SOURCE_ZIP}"             candidate/SHA256SUMS-libreelec-x86_64.txt             --clobber
