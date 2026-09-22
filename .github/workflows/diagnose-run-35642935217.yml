@@ -1,4 +1,4 @@
-name: Diagnose LibreELEC run 35642935217
+name: Verify LibreELEC local file source semantics
 
 on:
   push:
@@ -8,66 +8,77 @@ on:
       - ".github/workflows/diagnose-run-35642935217.yml"
 
 permissions:
-  actions: read
   contents: read
 
 jobs:
-  diagnose:
+  verify:
     runs-on: ubuntu-22.04
     steps:
-      - name: Extract first real failure from existing job log
+      - name: Checkout exact LibreELEC 12.0.2
+        uses: actions/checkout@v5
+        with:
+          repository: LibreELEC/LibreELEC.tv
+          ref: f3fdd11916f8a47dc5a11c3a4c99cb7c7ffac78b
+          path: LibreELEC.tv
+          fetch-depth: 1
+
+      - name: Verify file source get and extract
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          JOB_ID: "106476381401"
+          PROJECT: Generic
+          DEVICE: Generic
+          ARCH: x86_64
         run: |
           set -euo pipefail
 
-          log="$RUNNER_TEMP/job-${JOB_ID}.log"
-          curl --fail --location \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${JOB_ID}/logs" \
-            -o "$log"
+          mkdir -p LibreELEC.tv/sources/visualization.projectm
+          tmp="$RUNNER_TEMP/source-root"
+          rm -rf "$tmp"
+          mkdir -p "$tmp/visualization.projectm-21.0.3.3"
+          printf '%s\n' 'local-source-probe' > "$tmp/visualization.projectm-21.0.3.3/probe.txt"
+          tar -C "$tmp" -czf             LibreELEC.tv/sources/visualization.projectm/visualization.projectm-21.0.3.3.tar.gz             visualization.projectm-21.0.3.3
 
-          echo "Downloaded log bytes: $(wc -c < "$log")"
-
-          python3 - "$log" <<'PY'
-          import re
-          import sys
+          python3 - <<'PY'
           from pathlib import Path
 
-          lines = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines()
-
-          fail_patterns = [
-              re.compile(r"\[[0-9]+/[0-9]+\] \[FAIL\] build"),
-              re.compile(r"FAILURE: scripts/build"),
-              re.compile(r"\*\*\* FAILED COMMAND \*\*\*"),
+          p = Path("LibreELEC.tv/packages/mediacenter/kodi-binary-addons/visualization.projectm/package.mk")
+          s = p.read_text(encoding="utf-8")
+          replacements = [
+              ('PKG_VERSION="21.0.3-Omega"', 'PKG_VERSION="21.0.3.3"'),
+              ('PKG_URL="https://github.com/xbmc/visualization.projectm/archive/${PKG_VERSION}.tar.gz"',
+               'PKG_URL="file://${SOURCES}/${PKG_NAME}/visualization.projectm-${PKG_VERSION}.tar.gz"'),
           ]
+          for old, new in replacements:
+              if s.count(old) != 1:
+                  raise SystemExit(f"Expected exactly one recipe match: {old!r}")
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding="utf-8")
 
-          hits = []
-          for i, line in enumerate(lines):
-              if any(p.search(line) for p in fail_patterns):
-                  hits.append(i)
-
-          if not hits:
-              print("NO FAILURE MARKER FOUND")
-              sys.exit(1)
-
-          first = hits[0]
-          print(f"FIRST FAILURE MARKER LINE: {first + 1}")
-          print("===== FAILURE CONTEXT =====")
-          for n in range(max(0, first - 180), min(len(lines), first + 320)):
-              print(f"{n + 1}: {lines[n]}")
-
-          print("===== ERROR-LIKE LINES NEAR FAILURE =====")
-          err = re.compile(r"(error:|fatal:|configure: error|CMake Error|undefined reference|No such file or directory|not supported|FAILED COMMAND|\[FAIL\]|FAILURE: scripts/build)", re.I)
-          for n in range(max(0, first - 3000), min(len(lines), first + 1000)):
-              if err.search(lines[n]):
-                  print(f"{n + 1}: {lines[n]}")
-
-          print("===== FIRST 40 FAILURE MARKERS =====")
-          for i in hits[:40]:
-              print(f"{i + 1}: {lines[i]}")
+          p = Path("LibreELEC.tv/distributions/LibreELEC/options")
+          s = p.read_text(encoding="utf-8")
+          old = '  GET_HANDLER_SUPPORT="archive"'
+          new = '  GET_HANDLER_SUPPORT="archive file"'
+          if s.count(old) != 1:
+              raise SystemExit("Expected exactly one GET_HANDLER_SUPPORT match")
+          p.write_text(s.replace(old, new, 1), encoding="utf-8")
           PY
+
+          cd LibreELEC.tv
+
+          scripts/get visualization.projectm
+
+          (
+            . config/options visualization.projectm
+            echo "Resolved PKG_URL=$PKG_URL"
+            echo "Resolved PKG_SOURCE_NAME=$PKG_SOURCE_NAME"
+            test "$PKG_SOURCE_NAME" = "$PWD/sources/visualization.projectm/visualization.projectm-21.0.3.3.tar.gz"
+          )
+
+          out="$RUNNER_TEMP/extract"
+          rm -rf "$out"
+          mkdir -p "$out"
+          scripts/extract visualization.projectm "$out"
+          test -f "$out/visualization.projectm-21.0.3.3/probe.txt"
+          grep -F 'local-source-probe' "$out/visualization.projectm-21.0.3.3/probe.txt"
+
+          echo "LibreELEC file:// source get/extract semantics verified."
