@@ -8,12 +8,6 @@ on:
     paths:
       - ".github/workflows/build-projectm-omega-libreelec-x86_64.yml"
       - "patch/**"
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/build-projectm-omega-libreelec-x86_64.yml"
-      - "patch/**"
 
 permissions:
   contents: write
@@ -606,17 +600,13 @@ jobs:
           test -s "$root/build/build-projectm-omega-libreelec-x86_64.yml"
           test -s "$root/build/libreelec-visualization.projectm-package.mk"
 
-      - name: Publish LibreELEC files to existing JJS release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          tag="v${ADDON_VERSION}-jjs"
-          gh release view "$tag" >/dev/null
-          gh release upload "$tag" \
-            "out/$LE_ADDON_ZIP" \
-            "out/$LE_SOURCE_ZIP" \
-            out/SHA256SUMS-libreelec-x86_64.txt \
-            --clobber
+      - name: Preserve validated LibreELEC release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: libreelec-x86_64-validated
+          path: |
+            out/${{ env.LE_ADDON_ZIP }}
+            out/${{ env.LE_SOURCE_ZIP }}
+            out/SHA256SUMS-libreelec-x86_64.txt
+          if-no-files-found: error
+
