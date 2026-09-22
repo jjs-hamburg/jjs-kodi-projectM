@@ -502,12 +502,27 @@ jobs:
           grep -F '<platform>linux</platform>' "$addon"
           grep -F 'library_linux=' "$addon"
 
-          mapfile -t libs < <(find le-validate/visualization.projectm -type f -name '*.so' | sort)
-          printf 'LibreELEC binary candidates:\n'
-          printf '%s\n' "${libs[@]}"
-          test "${#libs[@]}" -gt 0
-          file "${libs[0]}" | grep -E 'ELF 64-bit.*x86-64'
-          readelf -h "${libs[0]}" | grep -F 'Advanced Micro Devices X86-64'
+          lib_name="$(python3 - "$addon" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+
+          root = ET.parse(sys.argv[1]).getroot()
+          for extension in root.findall("extension"):
+              if extension.get("point") == "xbmc.player.musicviz":
+                  library = extension.get("library_linux")
+                  if library:
+                      print(library)
+                      break
+          else:
+              raise SystemExit("library_linux not found in visualization extension")
+          PY
+          )"
+          test -n "$lib_name"
+          lib="le-validate/visualization.projectm/$lib_name"
+          printf 'LibreELEC binary: %s\n' "$lib"
+          test -f "$lib"
+          file "$lib" | grep -E 'ELF 64-bit.*x86-64'
+          readelf -h "$lib" | grep -F 'Advanced Micro Devices X86-64'
           grep -F 'std::try_to_lock' visualization.projectm/src/Main.cpp
 
           test -s le-validate/visualization.projectm/LICENSE.md
