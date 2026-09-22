@@ -20,16 +20,20 @@ distinguishable from the unmodified upstream version.
 > This is an unofficial community build. It is not an official release of Team
 > Kodi, the Kodi Foundation, projectM, or their maintainers.
 
-## Current release
+## Current releases
 
-**JJS KODI projectM 21.0.3.3**
+**JJS KODI projectM 21.0.3.3** is published as two platform-specific releases:
+
+- **Android AArch64:** tag `v21.0.3.3-jjs`
+- **LibreELEC 12.0.2 Generic x86_64:** tag `v21.0.3.3-jjs-libreelec-x86_64`
+
+Both use the same documented JJS audio-isolation source change and projectM
+3.1.12 source, but they are built and packaged for different target platforms.
 
 Target environments:
 
 - Kodi 21/Omega
-- Android AArch64
-- Android API 21
-- Android NDK r21e / 21.4.7075529
+- Android AArch64, Android API 21, Android NDK r21e / 21.4.7075529
 - LibreELEC 12.0.2 Generic x86_64
 - projectM 3.1.12
 
@@ -139,13 +143,21 @@ archive containing the exact build recipe used.
 
 ## Installation
 
-Open the current GitHub Release and download the ZIP for your platform:
+Choose the release for your platform:
 
-Android AArch64:
+Android AArch64 release:
+
+`v21.0.3.3-jjs`
+
+Installable ZIP:
 
 `visualization.projectm-21.0.3.3-omega-android-aarch64.zip`
 
-LibreELEC Generic x86_64:
+LibreELEC 12.0.2 Generic x86_64 release:
+
+`v21.0.3.3-jjs-libreelec-x86_64`
+
+Installable ZIP:
 
 `visualization.projectm-21.0.3.3-omega-libreelec-x86_64.zip`
 
@@ -159,15 +171,11 @@ Do not unpack it first.
 
 ## Release files
 
-A public release contains:
+### Android AArch64 — `v21.0.3.3-jjs`
 
 `visualization.projectm-21.0.3.3-omega-android-aarch64.zip`
 
 The directly installable Android AArch64 Kodi add-on.
-
-`visualization.projectm-21.0.3.3-omega-libreelec-x86_64.zip`
-
-The directly installable LibreELEC Generic x86_64 Kodi add-on.
 
 `jjs-kodi-projectm-21.0.3.3-source.zip`
 
@@ -176,14 +184,20 @@ The corresponding source package containing the patched
 the build, the source transformer, build workflow, README, notices and license
 texts.
 
+`SHA256SUMS.txt`
+
+Checksums for the Android release files.
+
+### LibreELEC Generic x86_64 — `v21.0.3.3-jjs-libreelec-x86_64`
+
+`visualization.projectm-21.0.3.3-omega-libreelec-x86_64.zip`
+
+The directly installable LibreELEC 12.0.2 Generic x86_64 Kodi add-on.
+
 `jjs-kodi-projectm-21.0.3.3-libreelec-x86_64-source.zip`
 
 The corresponding source package for the LibreELEC build, including the exact
 LibreELEC package recipe used for that build.
-
-`SHA256SUMS.txt`
-
-Checksums for the Android release files.
 
 `SHA256SUMS-libreelec-x86_64.txt`
 
