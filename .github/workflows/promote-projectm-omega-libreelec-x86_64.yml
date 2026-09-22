@@ -148,6 +148,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="v${ADDON_VERSION}-jjs"
+          tag="v${ADDON_VERSION}-jjs-libreelec-x86_64"
           gh release view "${tag}" >/dev/null
           gh release upload "${tag}"             "candidate/${LE_ADDON_ZIP}"             "candidate/${LE_SOURCE_ZIP}"             candidate/SHA256SUMS-libreelec-x86_64.txt             --clobber
