@@ -516,6 +516,15 @@ jobs:
           (cd le-package && zip -qr "../out/$LE_ADDON_ZIP" visualization.projectm)
           sha256sum "out/$LE_ADDON_ZIP" | tee out/SHA256SUMS-libreelec-x86_64.txt
 
+      - name: Preserve LibreELEC package before validation
+        uses: actions/upload-artifact@v4
+        with:
+          name: libreelec-x86_64-prevalidation
+          path: |
+            out/${{ env.LE_ADDON_ZIP }}
+            out/SHA256SUMS-libreelec-x86_64.txt
+          if-no-files-found: error
+
       - name: Validate LibreELEC package
         shell: bash
         run: |
