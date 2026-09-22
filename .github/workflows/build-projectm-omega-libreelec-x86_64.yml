@@ -529,7 +529,9 @@ jobs:
           grep -F 'version="21.0.3.3"' "$addon"
           grep -F 'name="JJS KODI projectM"' "$addon"
           grep -F 'provider-name="Team Kodi; JJS"' "$addon"
-          grep -F '<platform>linux</platform>' "$addon"
+          # LibreELEC 12.0.2 builds binary add-ons against kodi:host, whose
+          # generated KodiConfig.cmake has an empty PLATFORM_TAG. The actual
+          # Linux binding is therefore validated via library_linux below.
           grep -F 'library_linux=' "$addon"
 
           lib_name="$(python3 - "$addon" <<'PY'
