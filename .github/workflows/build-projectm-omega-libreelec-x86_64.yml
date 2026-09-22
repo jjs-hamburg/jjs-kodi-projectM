@@ -117,6 +117,7 @@ jobs:
 
           replacements = [
               ('PKG_VERSION="21.0.3-Omega"', 'PKG_VERSION="21.0.3.3"'),
+              ('PKG_REV="1"', 'PKG_REV="1"\nPKG_ADDON_VERSION="21.0.3.3"'),
               ('PKG_SHA256="aee6c038a48c68868edb1178e9ae980b1082de82db2e4b36c6b99c65ec5e88ca"',
                f'PKG_SHA256="{os.environ["LE_SOURCE_SHA256"]}"'),
               ('PKG_URL="https://github.com/xbmc/visualization.projectm/archive/${PKG_VERSION}.tar.gz"',
