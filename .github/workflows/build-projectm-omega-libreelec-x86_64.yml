@@ -176,6 +176,11 @@ jobs:
           cp "$LE_SOURCE_ARCHIVE" "LibreELEC.tv/sources/visualization.projectm/visualization.projectm-${ADDON_VERSION}.tar.gz"
           test "$(sha256sum "LibreELEC.tv/sources/visualization.projectm/visualization.projectm-${ADDON_VERSION}.tar.gz" | awk '{print $1}')" = "$LE_SOURCE_SHA256"
 
+          # LibreELEC 12 scripts/extract resolves file:// sources via
+          # PKG_SOURCE_NAME relative to the LibreELEC working directory.
+          cp "$LE_SOURCE_ARCHIVE" "LibreELEC.tv/visualization.projectm-${ADDON_VERSION}.tar.gz"
+          test "$(sha256sum "LibreELEC.tv/visualization.projectm-${ADDON_VERSION}.tar.gz" | awk '{print $1}')" = "$LE_SOURCE_SHA256"
+
       - name: Preseed verified GNU make 4.4.1 source
         shell: bash
         run: |
