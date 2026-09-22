@@ -1,0 +1,75 @@
+name: Diagnose LibreELEC run 35642935217
+
+on:
+  push:
+    branches:
+      - feature/libreelec-x86_64
+    paths:
+      - ".github/workflows/diagnose-run-35642935217.yml"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Extract first real failure from existing job log
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_ID: "106476381401"
+        run: |
+          set -euo pipefail
+
+          log="$RUNNER_TEMP/job-${JOB_ID}.log"
+          curl --fail --location             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${JOB_ID}/logs"             -o "$log"
+
+          echo "Downloaded log bytes: $(wc -c < "$log")"
+
+          python3 - "$log" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace").splitlines()
+
+          fail_patterns = [
+              re.compile(r"\[FAIL\]"),
+              re.compile(r"FAILURE \[build"),
+              re.compile(r"\*\*\* FAILED COMMAND \*\*\*"),
+          ]
+          error_patterns = [
+              re.compile(r"(^|[^A-Za-z])error:", re.I),
+              re.compile(r"fatal error:", re.I),
+              re.compile(r"configure: error", re.I),
+              re.compile(r"CMake Error", re.I),
+              re.compile(r"undefined reference", re.I),
+              re.compile(r"No such file or directory", re.I),
+              re.compile(r"get handler .* is not supported", re.I),
+          ]
+
+          hits = [i for i, line in enumerate(lines)
+                  if any(p.search(line) for p in fail_patterns)]
+          if not hits:
+              print("NO FAILURE MARKER FOUND")
+              sys.exit(1)
+
+          first = hits[0]
+          print(f"FIRST FAILURE MARKER LINE: {first + 1}")
+          print("===== FAILURE CONTEXT =====")
+          for n in range(max(0, first - 180), min(len(lines), first + 260)):
+              print(f"{n + 1}: {lines[n]}")
+
+          print("===== ERROR-LIKE LINES BEFORE FIRST FAILURE (last 120) =====")
+          errs = [i for i in range(0, first + 1)
+                  if any(p.search(lines[i]) for p in error_patterns)]
+          for i in errs[-120:]:
+              print(f"{i + 1}: {lines[i]}")
+
+          print("===== FIRST 40 FAILURE MARKERS =====")
+          for i in hits[:40]:
+              print(f"{i + 1}: {lines[i]}")
+          PY
