@@ -20,9 +20,9 @@ jobs:
       LIBREELEC_REF: f3fdd11916f8a47dc5a11c3a4c99cb7c7ffac78b
       ADDON_REF: d91f39d9ee9f06f998fe83d58154d36331d2c666
       PROJECTM_REF: b3c3282eb00fae210e9499fa9d11bcfcccffbd96
-      ADDON_VERSION: 21.0.3.3
-      LE_ADDON_ZIP: visualization.projectm-21.0.3.3-omega-libreelec-x86_64.zip
-      LE_SOURCE_ZIP: jjs-kodi-projectm-21.0.3.3-libreelec-x86_64-source.zip
+      ADDON_VERSION: 21.0.3.4
+      LE_ADDON_ZIP: visualization.projectm-21.0.3.4-omega-libreelec-x86_64.zip
+      LE_SOURCE_ZIP: jjs-kodi-projectm-21.0.3.4-libreelec-x86_64-source.zip
 
     steps:
       - name: Checkout build repository
@@ -81,6 +81,16 @@ jobs:
           grep -F 'version="21.0.3.3"' visualization.projectm/visualization.projectm/addon.xml.in
           grep -F 'name="JJS KODI projectM"' visualization.projectm/visualization.projectm/addon.xml.in
 
+      - name: Apply LibreELEC-only GLES state isolation test patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 patch/apply_libreelec_gl_state_fix.py \
+            --addon "$GITHUB_WORKSPACE/visualization.projectm"
+          grep -F 'GL_FRAMEBUFFER_BINDING' visualization.projectm/src/Main.cpp
+          grep -F 'previousViewport' visualization.projectm/src/Main.cpp
+          grep -F 'version="21.0.3.4"' visualization.projectm/visualization.projectm/addon.xml.in
+
       - name: Prepare exact JJS source archive for LibreELEC package build
         shell: bash
         run: |
@@ -110,8 +120,8 @@ jobs:
           s = p.read_text(encoding="utf-8")
 
           replacements = [
-              ('PKG_VERSION="21.0.3-Omega"', 'PKG_VERSION="21.0.3.3"'),
-              ('PKG_REV="1"', 'PKG_REV="1"\nPKG_ADDON_VERSION="21.0.3.3"'),
+              ('PKG_VERSION="21.0.3-Omega"', 'PKG_VERSION="21.0.3.4"'),
+              ('PKG_REV="1"', 'PKG_REV="1"\nPKG_ADDON_VERSION="21.0.3.4"'),
               ('PKG_SHA256="aee6c038a48c68868edb1178e9ae980b1082de82db2e4b36c6b99c65ec5e88ca"',
                f'PKG_SHA256="{os.environ["LE_SOURCE_SHA256"]}"'),
               ('PKG_URL="https://github.com/xbmc/visualization.projectm/archive/${PKG_VERSION}.tar.gz"',
@@ -529,7 +539,7 @@ jobs:
 
           addon="le-validate/visualization.projectm/addon.xml"
           test -f "$addon"
-          grep -F 'version="21.0.3.3"' "$addon"
+          grep -F 'version="21.0.3.4"' "$addon"
           grep -F 'name="JJS KODI projectM"' "$addon"
           grep -F 'provider-name="Team Kodi; JJS"' "$addon"
           # LibreELEC 12.0.2 builds binary add-ons against kodi:host, whose
@@ -559,6 +569,8 @@ jobs:
           file "$lib" | grep -E 'ELF 64-bit.*x86-64'
           readelf -h "$lib" | grep -F 'Advanced Micro Devices X86-64'
           grep -F 'std::try_to_lock' visualization.projectm/src/Main.cpp
+          grep -F 'GL_FRAMEBUFFER_BINDING' visualization.projectm/src/Main.cpp
+          grep -F 'previousViewport' visualization.projectm/src/Main.cpp
 
           test -s le-validate/visualization.projectm/LICENSE.md
           test -s le-validate/visualization.projectm/LICENSE-projectM-LGPL-2.1.txt
@@ -579,6 +591,7 @@ jobs:
           find "$root" -type f -name .git -delete
 
           cp patch/apply_changes.py "$root/build/apply_changes.py"
+          cp patch/apply_libreelec_gl_state_fix.py "$root/build/apply_libreelec_gl_state_fix.py"
           cp .github/workflows/build-projectm-omega-libreelec-x86_64.yml "$root/build/"
           cp LibreELEC.tv/packages/mediacenter/kodi-binary-addons/visualization.projectm/package.mk "$root/build/libreelec-visualization.projectm-package.mk"
           cp README.md NOTICE.md SOURCE.md LICENSE.md LICENSE-projectM-LGPL-2.1.txt "$root/"
@@ -596,6 +609,9 @@ jobs:
           root="le-source-validate/jjs-kodi-projectm-${ADDON_VERSION}-libreelec-x86_64"
           test -s "$root/visualization.projectm/src/Main.cpp"
           grep -F 'std::try_to_lock' "$root/visualization.projectm/src/Main.cpp"
+          grep -F 'GL_FRAMEBUFFER_BINDING' "$root/visualization.projectm/src/Main.cpp"
+          grep -F 'previousViewport' "$root/visualization.projectm/src/Main.cpp"
+          test -s "$root/build/apply_libreelec_gl_state_fix.py"
           test -s "$root/projectM-3.1.12/src/libprojectM/projectM.cpp"
           test -s "$root/build/build-projectm-omega-libreelec-x86_64.yml"
           test -s "$root/build/libreelec-visualization.projectm-package.mk"
