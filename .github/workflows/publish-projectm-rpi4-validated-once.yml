@@ -1,0 +1,108 @@
+name: Publish validated projectM RPi4 release once
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish-projectm-rpi4-validated-once.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-22.04
+    env:
+      ADDON_VERSION: 21.0.3.3
+      VALIDATED_RUN_ID: 36575995679
+      CANDIDATE_ARTIFACT: libreelec-rpi4-aarch64-validated
+      LE_ADDON_ZIP: visualization.projectm-21.0.3.3-omega-libreelec-rpi4-aarch64.zip
+      LE_SOURCE_ZIP: jjs-kodi-projectm-21.0.3.3-libreelec-rpi4-aarch64-source.zip
+
+    steps:
+      - name: Download exact tested validated candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.CANDIDATE_ARTIFACT }}
+          path: candidate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.VALIDATED_RUN_ID }}
+
+      - name: Revalidate exact tested candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -s "candidate/${LE_ADDON_ZIP}"
+          test -s "candidate/${LE_SOURCE_ZIP}"
+          test -s candidate/SHA256SUMS-libreelec-rpi4-aarch64.txt
+
+          rm -rf validate-addon validate-source
+          mkdir validate-addon validate-source
+          unzip -q "candidate/${LE_ADDON_ZIP}" -d validate-addon
+          unzip -q "candidate/${LE_SOURCE_ZIP}" -d validate-source
+
+          addon="validate-addon/visualization.projectm/addon.xml"
+          test -s "${addon}"
+          grep -F 'version="21.0.3.3"' "${addon}"
+          grep -F 'name="JJS KODI projectM"' "${addon}"
+          grep -F 'provider-name="Team Kodi; JJS"' "${addon}"
+          grep -F 'library_linux=' "${addon}"
+
+          lib_name="$(python3 - "${addon}" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          root = ET.parse(sys.argv[1]).getroot()
+          for extension in root.findall("extension"):
+              if extension.get("point") == "xbmc.player.musicviz":
+                  library = extension.get("library_linux")
+                  if library:
+                      print(library)
+                      break
+          else:
+              raise SystemExit("library_linux not found in visualization extension")
+          PY
+          )"
+
+          test -n "${lib_name}"
+          lib="validate-addon/visualization.projectm/${lib_name}"
+          test -s "${lib}"
+          file "${lib}" | grep -E 'ELF 64-bit.*ARM aarch64'
+          readelf -h "${lib}" | grep -F 'AArch64'
+
+          source_root="validate-source/jjs-kodi-projectm-${ADDON_VERSION}-libreelec-rpi4-aarch64"
+          test -s "${source_root}/visualization.projectm/src/Main.cpp"
+          grep -F 'std::try_to_lock' "${source_root}/visualization.projectm/src/Main.cpp"
+          test -s "${source_root}/projectM-3.1.12/src/libprojectM/projectM.cpp"
+          test -s "${source_root}/build/build-projectm-omega-libreelec-rpi4-aarch64.yml"
+
+          expected_addon="$(awk -v f="out/${LE_ADDON_ZIP}" '$2 == f {print $1}' candidate/SHA256SUMS-libreelec-rpi4-aarch64.txt)"
+          expected_source="$(awk -v f="out/${LE_SOURCE_ZIP}" '$2 == f {print $1}' candidate/SHA256SUMS-libreelec-rpi4-aarch64.txt)"
+          test -n "${expected_addon}"
+          test -n "${expected_source}"
+          test "$(sha256sum "candidate/${LE_ADDON_ZIP}" | awk '{print $1}')" = "${expected_addon}"
+          test "$(sha256sum "candidate/${LE_SOURCE_ZIP}" | awk '{print $1}')" = "${expected_source}"
+
+      - name: Publish Raspberry Pi 4 release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v${ADDON_VERSION}-jjs-libreelec-rpi4-aarch64"
+
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
+            gh release create "${tag}" \
+              --target main \
+              --title "JJS KODI projectM ${ADDON_VERSION} - LibreELEC Raspberry Pi 4 AArch64" \
+              --notes "Unofficial JJS KODI projectM ${ADDON_VERSION} build for LibreELEC 12.0.2 on Raspberry Pi 4 AArch64. This is the exact validated build from GitHub Actions run ${VALIDATED_RUN_ID}, tested successfully on Raspberry Pi 4 before publication."
+          fi
+
+          gh release upload "${tag}" \
+            "candidate/${LE_ADDON_ZIP}" \
+            "candidate/${LE_SOURCE_ZIP}" \
+            candidate/SHA256SUMS-libreelec-rpi4-aarch64.txt \
+            --clobber
