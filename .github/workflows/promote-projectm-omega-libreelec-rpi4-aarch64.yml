@@ -51,7 +51,8 @@ jobs:
 
             run_id="$(jq -r --arg repo "${PR_HEAD_REPO}" '
               [.workflow_runs[]
-               | select(.head_repository.full_name == $repo)]
+               | select(.head_repository.full_name == $repo)
+               | select(.status == "completed" and .conclusion == "success")]
               | sort_by(.created_at)
               | last
               | .id // empty
