@@ -151,13 +151,15 @@ jobs:
         run: |
           set -euo pipefail
           tag="v${ADDON_VERSION}-jjs-libreelec-rpi4-aarch64"
-          if ! gh release view "${tag}" >/dev/null 2>&1; then
+          if ! gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release create "${tag}" \
+              --repo "${GITHUB_REPOSITORY}" \
               --target main \
               --title "JJS KODI projectM ${ADDON_VERSION} - LibreELEC Raspberry Pi 4 AArch64" \
               --notes "Unofficial JJS KODI projectM ${ADDON_VERSION} build for LibreELEC 12.0.2 on Raspberry Pi 4 AArch64. Built from the same pinned source and JJS audio-isolation change as the Android AArch64 and LibreELEC Generic x86_64 releases."
           fi
           gh release upload "${tag}" \
+            --repo "${GITHUB_REPOSITORY}" \
             "candidate/${LE_ADDON_ZIP}" \
             "candidate/${LE_SOURCE_ZIP}" \
             candidate/SHA256SUMS-libreelec-rpi4-aarch64.txt \
