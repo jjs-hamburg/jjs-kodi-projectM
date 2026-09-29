@@ -416,6 +416,49 @@ jobs:
           grep -F 'PKG_VERSION="1.3.7"' LibreELEC.tv/packages/devel/pax-utils/package.mk
           grep -F 'pax-utils-${PKG_VERSION}.tar.xz' LibreELEC.tv/packages/devel/pax-utils/package.mk
 
+      - name: Preseed verified rsync 3.2.7 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir="LibreELEC.tv/sources/rsync"
+          archive="$dir/rsync-3.2.7.tar.gz"
+          expected="4e7d9d3f6ed10878c58c5fb724a67dacf4b6aac7340b13e488fb2dc41346f2bb"
+          canonical_url="https://download.samba.org/pub/rsync/src/rsync-3.2.7.tar.gz"
+
+          mkdir -p "$dir"
+
+          verify() {
+            [ -f "$1" ] || return 1
+            [ "$(sha256sum "$1" | awk '{print $1}')" = "$expected" ]
+          }
+
+          if ! verify "$archive"; then
+            rm -f "$archive" "$archive.tmp"
+            ok=0
+            for url in \
+              "https://slackware.mirror.garr.it/rsync/src/rsync-3.2.7.tar.gz" \
+              "https://www.nic.funet.fi/pub/files/index/samba/pub/rsync/src/rsync-3.2.7.tar.gz" \
+              "https://mirrors.omnios.org/rsync/rsync-3.2.7.tar.gz"
+            do
+              rm -f "$archive.tmp"
+              if curl --fail --location --retry 5 --retry-all-errors --connect-timeout 30 \
+                   --output "$archive.tmp" "$url" && verify "$archive.tmp"; then
+                mv "$archive.tmp" "$archive"
+                ok=1
+                break
+              fi
+            done
+            test "$ok" -eq 1
+          fi
+
+          # Match LibreELEC's cache stamps to the unmodified package recipe.
+          # The downloaded bytes are accepted only when they match LibreELEC's
+          # pinned SHA256 above.
+          printf '%s\n' "$canonical_url" > "$archive.url"
+          printf '%s\n' "$expected" > "$archive.sha256"
+
+          sha256sum "$archive"
+
       - name: Preflight all LibreELEC source downloads
         working-directory: LibreELEC.tv
         shell: bash
