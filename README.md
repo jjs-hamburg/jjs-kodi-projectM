@@ -1,8 +1,8 @@
 # JJS KODI projectM
 
 **JJS KODI projectM** is an unofficial stability build of Kodi's
-`visualization.projectm` add-on for **Kodi 21/Omega on Android AArch64 and
-LibreELEC Generic x86_64**.
+`visualization.projectm` add-on for **Kodi 21/Omega on Android AArch64,
+LibreELEC Generic x86_64, and LibreELEC Raspberry Pi 4 AArch64**.
 
 It was created to solve a very specific playback problem: on the tested NVIDIA
 Shield setup, some projectM preset changes could briefly stall Kodi's audio
@@ -22,19 +22,22 @@ distinguishable from the unmodified upstream version.
 
 ## Current releases
 
-**JJS KODI projectM 21.0.3.3** is published as two platform-specific releases:
+**JJS KODI projectM 21.0.3.3** is published as three platform-specific releases:
 
 - **Android AArch64:** tag `v21.0.3.3-jjs`
 - **LibreELEC 12.0.2 Generic x86_64:** tag `v21.0.3.3-jjs-libreelec-x86_64`
+- **LibreELEC 12.0.2 Raspberry Pi 4 AArch64:** tag `v21.0.3.3-jjs-libreelec-rpi4-aarch64`
 
-Both use the same documented JJS audio-isolation source change and projectM
-3.1.12 source, but they are built and packaged for different target platforms.
+All three use the same documented JJS audio-isolation source change and projectM
+3.1.12 source, but they are built and packaged for their respective target
+platforms.
 
 Target environments:
 
 - Kodi 21/Omega
 - Android AArch64, Android API 21, Android NDK r21e / 21.4.7075529
 - LibreELEC 12.0.2 Generic x86_64
+- LibreELEC 12.0.2 Raspberry Pi 4 AArch64 (Cortex-A72)
 - projectM 3.1.12
 
 The last pre-naming binary tested directly on the NVIDIA Shield was version
@@ -133,13 +136,17 @@ The GitHub Actions workflow performs the complete Android AArch64 build:
 The build caches are keyed to the pinned Kodi revision, Android API level and
 NDK version. They shorten the build but do not define the source version.
 
-The LibreELEC workflow performs the corresponding Generic x86_64 build from the
-same transformed `visualization.projectm` source. It pins LibreELEC 12.0.2,
-preflights and SHA-verifies the LibreELEC source dependency plan, builds the
-add-on with LibreELEC's own `scripts/create_addon`, normalizes the installable
-ZIP, preserves that ZIP as a GitHub Actions artifact before validation, verifies
-the add-on metadata and x86-64 ELF binary, and creates a corresponding-source
-archive containing the exact build recipe used.
+The LibreELEC workflows perform corresponding builds for Generic x86_64 and
+Raspberry Pi 4 AArch64 from the same transformed `visualization.projectm`
+source. Both pin LibreELEC 12.0.2, preflight and SHA-verify the LibreELEC source
+dependency plan, build the add-on with LibreELEC's own `scripts/create_addon`,
+normalize the installable ZIP, preserve that ZIP as a GitHub Actions artifact
+before validation, verify the add-on metadata and target ELF architecture, and
+create a corresponding-source archive containing the exact build recipe used.
+
+The Raspberry Pi 4 workflow uses LibreELEC's native
+`PROJECT=RPi DEVICE=RPi4 ARCH=aarch64` target. LibreELEC selects Cortex-A72
+for this device/architecture combination.
 
 ## Installation
 
@@ -160,6 +167,14 @@ LibreELEC 12.0.2 Generic x86_64 release:
 Installable ZIP:
 
 `visualization.projectm-21.0.3.3-omega-libreelec-x86_64.zip`
+
+LibreELEC 12.0.2 Raspberry Pi 4 AArch64 release:
+
+`v21.0.3.3-jjs-libreelec-rpi4-aarch64`
+
+Installable ZIP:
+
+`visualization.projectm-21.0.3.3-omega-libreelec-rpi4-aarch64.zip`
 
 In Kodi use:
 
@@ -202,6 +217,23 @@ LibreELEC package recipe used for that build.
 `SHA256SUMS-libreelec-x86_64.txt`
 
 Checksums for the LibreELEC release files.
+
+
+### LibreELEC Raspberry Pi 4 AArch64 — `v21.0.3.3-jjs-libreelec-rpi4-aarch64`
+
+`visualization.projectm-21.0.3.3-omega-libreelec-rpi4-aarch64.zip`
+
+The directly installable LibreELEC 12.0.2 Raspberry Pi 4 AArch64 Kodi add-on.
+
+`jjs-kodi-projectm-21.0.3.3-libreelec-rpi4-aarch64-source.zip`
+
+The corresponding source package for the Raspberry Pi 4 LibreELEC build,
+including the exact LibreELEC package recipe and build workflow used for that
+build.
+
+`SHA256SUMS-libreelec-rpi4-aarch64.txt`
+
+Checksums for the Raspberry Pi 4 LibreELEC release files.
 
 ## Disclaimer
 
