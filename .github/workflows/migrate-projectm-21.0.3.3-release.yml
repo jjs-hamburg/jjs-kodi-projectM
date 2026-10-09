@@ -1,0 +1,116 @@
+name: Bundle projectM 21.0.3.3 releases
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/migrate-projectm-21.0.3.3-release.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  bundle:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Download existing LibreELEC release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p migrate/x86 migrate/rpi4
+          gh release download v21.0.3.3-jjs-libreelec-x86_64 --repo "${GITHUB_REPOSITORY}" --dir migrate/x86
+          gh release download v21.0.3.3-jjs-libreelec-rpi4-aarch64 --repo "${GITHUB_REPOSITORY}" --dir migrate/rpi4
+
+      - name: Verify downloaded assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          x86_addon="visualization.projectm-21.0.3.3-omega-libreelec-x86_64.zip"
+          x86_source="jjs-kodi-projectm-21.0.3.3-libreelec-x86_64-source.zip"
+          rpi_addon="visualization.projectm-21.0.3.3-omega-libreelec-rpi4-aarch64.zip"
+          rpi_source="jjs-kodi-projectm-21.0.3.3-libreelec-rpi4-aarch64-source.zip"
+
+          test -s "migrate/x86/${x86_addon}"
+          test -s "migrate/x86/${x86_source}"
+          test -s migrate/x86/SHA256SUMS-libreelec-x86_64.txt
+          test -s "migrate/rpi4/${rpi_addon}"
+          test -s "migrate/rpi4/${rpi_source}"
+          test -s migrate/rpi4/SHA256SUMS-libreelec-rpi4-aarch64.txt
+
+          x86_addon_expected="$(awk -v f="out/${x86_addon}" '$2 == f {print $1}' migrate/x86/SHA256SUMS-libreelec-x86_64.txt)"
+          x86_source_expected="$(awk -v f="out/${x86_source}" '$2 == f {print $1}' migrate/x86/SHA256SUMS-libreelec-x86_64.txt)"
+          rpi_addon_expected="$(awk -v f="out/${rpi_addon}" '$2 == f {print $1}' migrate/rpi4/SHA256SUMS-libreelec-rpi4-aarch64.txt)"
+          rpi_source_expected="$(awk -v f="out/${rpi_source}" '$2 == f {print $1}' migrate/rpi4/SHA256SUMS-libreelec-rpi4-aarch64.txt)"
+
+          test -n "${x86_addon_expected}"
+          test -n "${x86_source_expected}"
+          test -n "${rpi_addon_expected}"
+          test -n "${rpi_source_expected}"
+          test "$(sha256sum "migrate/x86/${x86_addon}" | awk '{print $1}')" = "${x86_addon_expected}"
+          test "$(sha256sum "migrate/x86/${x86_source}" | awk '{print $1}')" = "${x86_source_expected}"
+          test "$(sha256sum "migrate/rpi4/${rpi_addon}" | awk '{print $1}')" = "${rpi_addon_expected}"
+          test "$(sha256sum "migrate/rpi4/${rpi_source}" | awk '{print $1}')" = "${rpi_source_expected}"
+
+      - name: Upload LibreELEC assets into shared release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release view v21.0.3.3-jjs --repo "${GITHUB_REPOSITORY}" >/dev/null
+          gh release upload v21.0.3.3-jjs migrate/x86/* migrate/rpi4/* --repo "${GITHUB_REPOSITORY}" --clobber
+
+      - name: Update shared release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > release-notes.md <<'EOF'
+          JJS KODI projectM stability build for Kodi 21/Omega.
+
+          The add-on ID remains `visualization.projectm`. The visible add-on name is **JJS KODI projectM**.
+
+          This build changes the Kodi `visualization.projectm` wrapper so the audio callback never waits for projectM rendering or preset setup: mutex acquisition in `CVisualizationProjectM::AudioData()` is non-blocking, and the visualization yields immediately when projectM is busy.
+
+          The functional fix was tested on NVIDIA Shield / Kodi 21 Omega and eliminated the audible dropouts that had occurred with some preset changes. The LibreELEC builds use the same pinned source and JJS audio-isolation change.
+
+          This is an unofficial community build and is not an official release of Team Kodi, the Kodi Foundation, projectM, or their maintainers.
+
+          **Platforms**
+          - Android AArch64
+          - LibreELEC Generic x86_64
+          - LibreELEC Raspberry Pi 4 AArch64
+
+          **Assets**
+          - `visualization.projectm-21.0.3.3-omega-android-aarch64.zip`
+          - `visualization.projectm-21.0.3.3-omega-libreelec-x86_64.zip`
+          - `visualization.projectm-21.0.3.3-omega-libreelec-rpi4-aarch64.zip`
+          - corresponding source ZIPs and SHA256 checksum files
+
+          Exact upstream revisions, source transformation, licensing, and reproducibility details are documented in the repository README and SOURCE.md.
+          EOF
+          gh release edit v21.0.3.3-jjs --repo "${GITHUB_REPOSITORY}" --title "JJS KODI projectM 21.0.3.3 - Android ARM64 / LibreELEC x86_64 / Raspberry Pi 4" --notes-file release-notes.md
+
+      - name: Verify shared release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          assets="$(gh release view v21.0.3.3-jjs --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name')"
+          for required in \
+            visualization.projectm-21.0.3.3-omega-android-aarch64.zip \
+            visualization.projectm-21.0.3.3-omega-libreelec-x86_64.zip \
+            visualization.projectm-21.0.3.3-omega-libreelec-rpi4-aarch64.zip \
+            jjs-kodi-projectm-21.0.3.3-source.zip \
+            jjs-kodi-projectm-21.0.3.3-libreelec-x86_64-source.zip \
+            jjs-kodi-projectm-21.0.3.3-libreelec-rpi4-aarch64-source.zip \
+            SHA256SUMS.txt \
+            SHA256SUMS-libreelec-x86_64.txt \
+            SHA256SUMS-libreelec-rpi4-aarch64.txt; do
+            grep -Fx "${required}" <<<"${assets}"
+          done
