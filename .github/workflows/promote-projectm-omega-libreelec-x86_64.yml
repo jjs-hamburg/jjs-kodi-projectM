@@ -46,7 +46,11 @@ jobs:
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
             run_id="${MANUAL_RUN_ID}"
           else
-            runs_json="$(gh api -X GET               "repos/${GITHUB_REPOSITORY}/actions/workflows/${BUILD_WORKFLOW}/runs"               -f event=pull_request               -f branch="${PR_HEAD_BRANCH}"               -f per_page=100)"
+            runs_json="$(gh api -X GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${BUILD_WORKFLOW}/runs" \
+              -f event=pull_request \
+              -f branch="${PR_HEAD_BRANCH}" \
+              -f per_page=100)"
 
             run_id="$(jq -r --arg repo "${PR_HEAD_REPO}" '
               [.workflow_runs[]
@@ -71,7 +75,9 @@ jobs:
           test "${status}" = "completed"
           test "${conclusion}" = "success"
 
-          artifact_count="$(gh api             "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts"             --jq "[.artifacts[] | select(.name == \"${CANDIDATE_ARTIFACT}\" and .expired == false)] | length")"
+          artifact_count="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+            --jq "[.artifacts[] | select(.name == \"${CANDIDATE_ARTIFACT}\" and .expired == false)] | length")"
           test "${artifact_count}" = "1"
 
           echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
@@ -148,6 +154,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="v${ADDON_VERSION}-jjs-libreelec-x86_64"
+          tag="v${ADDON_VERSION}-jjs"
           gh release view "${tag}" >/dev/null
-          gh release upload "${tag}"             "candidate/${LE_ADDON_ZIP}"             "candidate/${LE_SOURCE_ZIP}"             candidate/SHA256SUMS-libreelec-x86_64.txt             --clobber
+          gh release upload "${tag}" \
+            "candidate/${LE_ADDON_ZIP}" \
+            "candidate/${LE_SOURCE_ZIP}" \
+            candidate/SHA256SUMS-libreelec-x86_64.txt \
+            --clobber
