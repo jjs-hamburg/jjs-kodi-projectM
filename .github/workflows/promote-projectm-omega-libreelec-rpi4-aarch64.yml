@@ -47,7 +47,11 @@ jobs:
           if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
             run_id="${MANUAL_RUN_ID}"
           else
-            runs_json="$(gh api -X GET               "repos/${GITHUB_REPOSITORY}/actions/workflows/${BUILD_WORKFLOW}/runs"               -f event=pull_request               -f branch="${PR_HEAD_BRANCH}"               -f per_page=100)"
+            runs_json="$(gh api -X GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${BUILD_WORKFLOW}/runs" \
+              -f event=pull_request \
+              -f branch="${PR_HEAD_BRANCH}" \
+              -f per_page=100)"
 
             run_id="$(jq -r --arg repo "${PR_HEAD_REPO}" '
               [.workflow_runs[]
@@ -73,7 +77,9 @@ jobs:
           test "${status}" = "completed"
           test "${conclusion}" = "success"
 
-          artifact_count="$(gh api             "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts"             --jq "[.artifacts[] | select(.name == \"${CANDIDATE_ARTIFACT}\" and .expired == false)] | length")"
+          artifact_count="$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+            --jq "[.artifacts[] | select(.name == \"${CANDIDATE_ARTIFACT}\" and .expired == false)] | length")"
           test "${artifact_count}" = "1"
 
           echo "run_id=${run_id}" >> "${GITHUB_OUTPUT}"
@@ -150,13 +156,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="v${ADDON_VERSION}-jjs-libreelec-rpi4-aarch64"
+          tag="v${ADDON_VERSION}-jjs"
           if ! gh release view "${tag}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
             gh release create "${tag}" \
               --repo "${GITHUB_REPOSITORY}" \
               --target main \
-              --title "JJS KODI projectM ${ADDON_VERSION} - LibreELEC Raspberry Pi 4 AArch64" \
-              --notes "Unofficial JJS KODI projectM ${ADDON_VERSION} build for LibreELEC 12.0.2 on Raspberry Pi 4 AArch64. Built from the same pinned source and JJS audio-isolation change as the Android AArch64 and LibreELEC Generic x86_64 releases."
+              --title "JJS KODI projectM ${ADDON_VERSION} - Android ARM64 / LibreELEC x86_64 / Raspberry Pi 4" \
+              --notes "Unofficial JJS KODI projectM ${ADDON_VERSION} builds for Kodi 21/Omega on Android AArch64 and LibreELEC on Generic x86_64 and Raspberry Pi 4 AArch64."
           fi
           gh release upload "${tag}" \
             --repo "${GITHUB_REPOSITORY}" \
